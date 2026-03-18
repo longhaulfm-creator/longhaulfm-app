@@ -1,2 +1,158 @@
 @import "tailwindcss";
 @plugin "daisyui";
+
+@import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body, #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: #0e1014;
+    color: #e8eaf0;
+    font-family: 'Barlow', sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    user-select: none; /* desktop app — no text selection by default */
+  }
+
+  /* Allow selection in inputs and text areas */
+  input, textarea, [data-selectable] { user-select: text; }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar { width: 4px; height: 4px; }
+  ::-webkit-scrollbar-track { background: #1e2230; }
+  ::-webkit-scrollbar-thumb { background: #2a2f40; border-radius: 2px; }
+  ::-webkit-scrollbar-thumb:hover { background: #363c52; }
+
+  /* Tauri window drag region */
+  [data-tauri-drag-region] { -webkit-app-region: drag; }
+  [data-tauri-drag-region] button,
+  [data-tauri-drag-region] a { -webkit-app-region: no-drag; }
+}
+
+@layer components {
+  /* Road texture overlay */
+  .road-texture::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: repeating-linear-gradient(
+      180deg,
+      transparent 0px, transparent 38px,
+      rgba(255,255,255,0.012) 38px, rgba(255,255,255,0.012) 40px
+    );
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Panel base */
+  .panel {
+    @apply bg-road border border-marking rounded-md overflow-hidden;
+  }
+
+  .panel-header {
+    @apply bg-lane border-b border-marking px-3 py-2 flex items-center justify-between;
+  }
+
+  .panel-title {
+    @apply font-ui text-2xs font-bold tracking-widest uppercase text-ink-muted;
+  }
+
+  /* Source button */
+  .source-btn {
+    @apply flex items-center gap-2 px-4 py-2 rounded border-2 border-marking
+           font-ui text-xs font-bold tracking-wider uppercase text-ink-muted
+           transition-all duration-150 cursor-pointer
+           hover:border-stripe hover:text-ink;
+  }
+  .source-btn.active {
+    @apply border-amber text-amber bg-amber-subtle shadow-amber;
+  }
+  .source-btn.active-live {
+    @apply border-signal-red text-signal-red bg-[rgba(255,77,77,0.08)];
+  }
+  .source-btn.active-talk {
+    @apply border-signal-blue text-signal-blue bg-[rgba(77,166,255,0.08)];
+  }
+  .source-btn.active-news {
+    @apply border-signal-yellow text-signal-yellow bg-[rgba(255,209,102,0.08)];
+  }
+
+  /* Badge */
+  .badge {
+    @apply inline-flex items-center font-ui text-2xs font-bold tracking-widest
+           uppercase px-2 py-0.5 rounded-sm border;
+  }
+  .badge-live    { @apply border-signal-red/40   text-signal-red   bg-signal-red/10; }
+  .badge-spotify { @apply border-[#1db954]/40    text-[#1db954]    bg-[#1db954]/10; }
+  .badge-talk    { @apply border-signal-blue/40  text-signal-blue  bg-signal-blue/10; }
+  .badge-auto    { @apply border-ink-dim/40      text-ink-dim      bg-ink-dim/10; }
+  .badge-news    { @apply border-signal-yellow/40 text-signal-yellow bg-signal-yellow/10; }
+  .badge-promo   { @apply border-amber/40        text-amber        bg-amber-subtle; }
+
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center gap-2
+           font-ui text-xs font-bold tracking-wider uppercase
+           px-4 py-2 rounded transition-all duration-150 cursor-pointer
+           disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-amber text-asphalt hover:bg-amber-hot active:scale-95;
+  }
+  .btn-ghost {
+    @apply btn border border-marking text-ink-muted hover:border-stripe hover:text-ink;
+  }
+  .btn-danger {
+    @apply btn border border-signal-red/40 text-signal-red hover:bg-signal-red/10;
+  }
+  .btn-sm {
+    @apply px-2.5 py-1 text-2xs;
+  }
+
+  /* Input */
+  .input {
+    @apply w-full bg-lane border border-marking rounded px-3 py-2
+           font-body text-xs text-ink placeholder:text-ink-dim
+           focus:outline-none focus:border-amber focus:ring-1 focus:ring-amber/30
+           transition-colors duration-150;
+  }
+
+  /* On Air blinker */
+  .on-air-badge {
+    @apply flex items-center gap-1.5 bg-signal-red px-2.5 py-1 rounded-sm
+           font-ui text-2xs font-bold tracking-widest uppercase;
+    animation: pulse-bg 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse-bg {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.65; }
+  }
+
+  /* Waveform bar */
+  .wave-bar {
+    @apply bg-amber rounded-sm opacity-70;
+    animation: wave var(--dur, 0.7s) ease-in-out infinite alternate;
+    animation-delay: var(--delay, 0s);
+    transform-origin: bottom;
+  }
+
+  /* Severity colours */
+  .severity-critical { @apply text-signal-red; }
+  .severity-warning  { @apply text-signal-yellow; }
+  .severity-info     { @apply text-signal-blue; }
+
+  /* Caller status colours */
+  .status-on_air  { @apply badge border-signal-red/40   text-signal-red   bg-signal-red/10; }
+  .status-waiting { @apply badge border-amber/40        text-amber        bg-amber-subtle; }
+  .status-done    { @apply badge border-ink-dim/40      text-ink-dim      bg-ink-dim/10; }
+  .status-dropped { @apply badge border-marking         text-ink-dim      bg-lane; }
+}
