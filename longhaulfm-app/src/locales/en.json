@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "dashboard":  "Dashboard",
+    "schedule":   "Schedule",
+    "callers":    "Callers",
+    "alerts":     "Road Alerts",
+    "partner":    "Partner"
+  },
+  "source": {
+    "spotify":  "Spotify",
+    "live":     "Live Studio",
+    "talk":     "Talk / Phones",
+    "news":     "News Feed",
+    "promo":    "Promo"
+  },
+  "caller": {
+    "add":       "Add Caller",
+    "on_air":    "On Air",
+    "waiting":   "Waiting",
+    "done":      "Done",
+    "dropped":   "Dropped",
+    "wrap_up":   "Wrap Up",
+    "name":      "Caller's name",
+    "location":  "Location",
+    "topic":     "Topic / Dedication"
+  },
+  "alert": {
+    "add":       "Add Alert",
+    "broadcast": "Broadcast Alert",
+    "clear":     "Clear alert",
+    "no_alerts": "No active alerts"
+  },
+  "partner": {
+    "bays":     "Bays Available",
+    "fuel":     "Diesel (R/L)",
+    "special":  "Today's Special",
+    "save":     "Save & Broadcast",
+    "saved":    "Up to date ✓"
+  },
+  "status": {
+    "on_air":      "ON AIR",
+    "listeners":   "listeners",
+    "next_break":  "Next break"
+  }
+}
