@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "dashboard": "Kontroleskerm",
+    "schedule":  "Skedule",
+    "callers":   "Bellers",
+    "alerts":    "Padwaarskuwings",
+    "partner":   "Vennoot"
+  },
+  "source": {
+    "spotify": "Spotify",
+    "live":    "Lewe Ateljee",
+    "talk":    "Gesels / Fone",
+    "news":    "Nuusfeed",
+    "promo":   "Promo"
+  },
+  "caller": {
+    "add":      "Voeg Beller By",
+    "on_air":   "Op Lug",
+    "waiting":  "Wag",
+    "done":     "Klaar",
+    "dropped":  "Laat Val",
+    "wrap_up":  "Afsluit",
+    "name":     "Beller se naam",
+    "location": "Ligging",
+    "topic":    "Onderwerp / Opdrag"
+  },
+  "alert": {
+    "add":       "Voeg Waarskuwing By",
+    "broadcast": "Uitsaai Waarskuwing",
+    "clear":     "Verwyder",
+    "no_alerts": "Geen aktiewe waarskuwings"
+  },
+  "partner": {
+    "bays":    "Baaie Beskikbaar",
+    "fuel":    "Diesel (R/L)",
+    "special": "Vandag se Spesiale",
+    "save":    "Stoor & Uitsaai",
+    "saved":   "Op datum ✓"
+  },
+  "status": {
+    "on_air":     "OP LUG",
+    "listeners":  "luisteraars",
+    "next_break": "Volgende breek"
+  }
+}
