@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "dashboard": "Dhibhodi",
+    "schedule":  "Chirongwa",
+    "callers":   "Vanodana",
+    "alerts":    "Yambiro yeMugwagwa",
+    "partner":   "Shamwari"
+  },
+  "source": {
+    "spotify": "Spotify",
+    "live":    "Studio Yazvino",
+    "talk":    "Kutaura / Foni",
+    "news":    "Nhau",
+    "promo":   "Kukudzidzisa"
+  },
+  "caller": {
+    "add":      "Wedzera Anodana",
+    "on_air":   "Pane Mhepo",
+    "waiting":  "Akamirira",
+    "done":     "Zapedza",
+    "dropped":  "Araswa",
+    "wrap_up":  "Pedzai",
+    "name":     "Zita reanodana",
+    "location": "Nzvimbo",
+    "topic":    "Musoro / Chipo"
+  },
+  "alert": {
+    "add":       "Wedzera Yambiro",
+    "broadcast": "Tumira Yambiro",
+    "clear":     "Bvisa Yambiro",
+    "no_alerts": "Hapana yambiro inoshandiswa"
+  },
+  "partner": {
+    "bays":    "Nzvimbo Dziripo",
+    "fuel":    "Diziri (R/L)",
+    "special": "Yakanakiswa Nhasi",
+    "save":    "Chengetedza & Tumira",
+    "saved":   "Yakagadziriswa ✓"
+  },
+  "status": {
+    "on_air":     "PANE MHEPO",
+    "listeners":  "vanoteerera",
+    "next_break": "Kupumika kunotevera"
+  }
+}
