@@ -1,0 +1,45 @@
+{
+  "nav": {
+    "dashboard": "Ibhodi Lokuphatha",
+    "schedule":  "Uhlelo",
+    "callers":   "Abashaya Ucingo",
+    "alerts":    "Izexwayiso Zomgwaqo",
+    "partner":   "Umlingani"
+  },
+  "source": {
+    "spotify": "Spotify",
+    "live":    "Istudio Esiphilayo",
+    "talk":    "Ukukhuluma / Ucingo",
+    "news":    "Izindaba",
+    "promo":   "Isikhangiso"
+  },
+  "caller": {
+    "add":      "Faka Umshayeli Wocingo",
+    "on_air":   "Emoyeni",
+    "waiting":  "Ulinde",
+    "done":     "Kuqediwe",
+    "dropped":  "Ushiyiwe",
+    "wrap_up":  "Qeda",
+    "name":     "Igama lomshayeli",
+    "location": "Indawo",
+    "topic":    "Isihloko / Ukuzinikela"
+  },
+  "alert": {
+    "add":       "Faka Isexwayiso",
+    "broadcast": "Sakaza Isexwayiso",
+    "clear":     "Susa Isexwayiso",
+    "no_alerts": "Azikho izexwayiso ezisetshenzwayo"
+  },
+  "partner": {
+    "bays":    "Izindawo Ezikhona",
+    "fuel":    "Diesel (R/L)",
+    "special": "Isikhethwa Sanamuhla",
+    "save":    "Londoloza & Sakaza",
+    "saved":   "Kuhlanzekile ✓"
+  },
+  "status": {
+    "on_air":     "EMOYENI",
+    "listeners":  "abalandeli",
+    "next_break": "Ukuphazamiseka okulandelayo"
+  }
+}
