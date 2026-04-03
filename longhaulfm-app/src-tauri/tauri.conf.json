@@ -32,5 +32,18 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ]
+  },
+  {
+    "plugins": {
+      "deep-link": {
+        "mobile": [
+          {
+            "host": "longhaul-fm.co.za",
+            "pathPrefix": ["/callback"],
+            "appLink": true
+          }
+        ]
+      }
+    }
   }
 }

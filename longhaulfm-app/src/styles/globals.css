@@ -1,68 +1,8 @@
-@import "tailwindcss";
 @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=Barlow+Condensed:wght@400;600;700&family=Barlow:wght@300;400;500&family=JetBrains+Mono:wght@400;500&display=swap');
-@plugin "daisyui";
 
-@theme {
-  /* Colors */
-  --color-asphalt: #0e1014;
-  --color-road: #151820;
-  --color-lane: #1e2230;
-  --color-marking: #2a2f40;
-  --color-stripe: #363c52;
-
-  /* Nested Colors (Amber) */
-  --color-amber: #f5a623;
-  --color-amber-hot: #ff8c00;
-  --color-amber-dim: #b87200;
-
-  /* Nested Colors (Signal) */
-  --color-signal-green: #39d98a;
-  --color-signal-red: #ff4d4d;
-  --color-signal-blue: #4da6ff;
-  --color-signal-yellow: #ffd166;
-
-  /* Nested Colors (Ink) */
-  --color-ink: #e8eaf0;
-  --color-ink-muted: #7a8094;
-  --color-ink-dim: #4a5068;
-
-  /* Font Families */
-  --font-display: "Bebas Neue", sans-serif;
-  --font-ui: "Barlow Condensed", sans-serif;
-  --font-body: "Barlow", sans-serif;
-  --font-mono: "JetBrains Mono", monospace;
-
-  /* Border Radius */
-  --radius-sm: 2px;
-  --radius-default: 3px;
-  --radius-md: 4px;
-  --radius-lg: 6px;
-
-  /* Keyframes */
-  @keyframes blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0; }
-  }
-  @keyframes wave {
-    from { transform: scaleY(0.2); }
-    to { transform: scaleY(1); }
-  }
-  @keyframes slide-up {
-    from { transform: translateY(16px); opacity: 0; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-  @keyframes fade-in {
-    from { opacity: 0; }
-    to { opacity: 1; }
-  }
-
-  /* Animations */
-  --animate-pulse-slow: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  --animate-blink: blink 1s step-end infinite;
-  --animate-wave: wave 0.8s ease-in-out infinite alternate;
-  --animate-slide-up: slide-up 0.3s ease-out;
-  --animate-fade-in: fade-in 0.2s ease-out;
-}
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 @layer base {
   *, *::before, *::after { box-sizing: border-box; }
@@ -119,7 +59,7 @@
   }
 
   .panel-title {
-    @apply font-ui text-xs font-bold tracking-widest uppercase text-ink-muted;
+    @apply font-ui text-2xs font-bold tracking-widest uppercase text-ink-muted;
   }
 
   /* Source button */
@@ -130,7 +70,7 @@
            hover:border-stripe hover:text-ink;
   }
   .source-btn.active {
-    @apply border-amber text-amber bg-amber-dim shadow-amber;
+    @apply border-amber text-amber bg-amber-subtle shadow-amber;
   }
   .source-btn.active-live {
     @apply border-signal-red text-signal-red bg-[rgba(255,77,77,0.08)];
@@ -144,7 +84,7 @@
 
   /* Badge */
   .badge {
-    @apply inline-flex items-center font-ui text-xs font-bold tracking-widest
+    @apply inline-flex items-center font-ui text-2xs font-bold tracking-widest
            uppercase px-2 py-0.5 rounded-sm border;
   }
   .badge-live    { @apply border-signal-red/40   text-signal-red   bg-signal-red/10; }
@@ -152,7 +92,7 @@
   .badge-talk    { @apply border-signal-blue/40  text-signal-blue  bg-signal-blue/10; }
   .badge-auto    { @apply border-ink-dim/40      text-ink-dim      bg-ink-dim/10; }
   .badge-news    { @apply border-signal-yellow/40 text-signal-yellow bg-signal-yellow/10; }
-  .badge-promo   { @apply border-amber/40        text-amber        bg-amber-dim; }
+  .badge-promo   { @apply border-amber/40        text-amber        bg-amber-subtle; }
 
   /* Button variants */
   .btn {
@@ -171,7 +111,7 @@
     @apply btn border border-signal-red/40 text-signal-red hover:bg-signal-red/10;
   }
   .btn-sm {
-    @apply px-2.5 py-1 text-xs;
+    @apply px-2.5 py-1 text-2xs;
   }
 
   /* Input */
@@ -185,7 +125,7 @@
   /* On Air blinker */
   .on-air-badge {
     @apply flex items-center gap-1.5 bg-signal-red px-2.5 py-1 rounded-sm
-           font-ui text-xs font-bold tracking-widest uppercase;
+           font-ui text-2xs font-bold tracking-widest uppercase;
     animation: pulse-bg 1.5s ease-in-out infinite;
   }
 
@@ -209,7 +149,7 @@
 
   /* Caller status colours */
   .status-on_air  { @apply badge border-signal-red/40   text-signal-red   bg-signal-red/10; }
-  .status-waiting { @apply badge border-amber/40        text-amber        bg-amber-dim; }
+  .status-waiting { @apply badge border-amber/40        text-amber        bg-amber-subtle; }
   .status-done    { @apply badge border-ink-dim/40      text-ink-dim      bg-ink-dim/10; }
   .status-dropped { @apply badge border-marking         text-ink-dim      bg-lane; }
 }

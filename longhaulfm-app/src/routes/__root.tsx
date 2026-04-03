@@ -35,7 +35,7 @@ function AppShell() {
   // Redirect to login if not authenticated
   useEffect(() => {
     if (!isReady) return
-    if (!user && !isLogin) navigate({ to: '/login' })
+    if (!user && !isLogin) navigate({ to: '/' })
     if (user  &&  isLogin) navigate({ to: '/' })
   }, [user, isReady, isLogin, navigate])
 

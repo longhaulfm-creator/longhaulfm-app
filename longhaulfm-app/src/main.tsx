@@ -1,12 +1,16 @@
-// src/main.tsx
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import './i18n/config'  // ← add this line before App
-import App from './App'
-import './styles/globals.css'
+import App from './App' // or your Router provider
+import './styles.css'
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+const rootElement = document.getElementById('root');
+
+if (rootElement) {
+  ReactDOM.createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  )
+} else {
+  console.error("Could not find root element!");
+}
