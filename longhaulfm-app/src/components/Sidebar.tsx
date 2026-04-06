@@ -1,66 +1,46 @@
-// src/components/Sidebar.tsx
-import { Link, useRouterState } from '@tanstack/react-router'
-import { useBroadcastStore } from '@/stores/broadcastStore'
-import { cn } from '@/lib/utils'
-
-interface NavItem {
-  to:     string
-  icon:   string
-  label:  string
-  badge?: () => number | null
-}
-
-const NAV: NavItem[] = [
-  { to: '/',          icon: '⬡', label: 'Dashboard' },
-  { to: '/schedule',  icon: '◫', label: 'Schedule' },
-  { to: '/callers',   icon: '◎', label: 'Callers' },
-  { to: '/alerts',    icon: '△', label: 'Road Alerts' },
-  { to: '/partner',   icon: '⬛', label: 'Partner' },
-]
+import { useAlertStore } from '@/stores/alertStore'
 
 export function Sidebar() {
-  const router = useRouterState()
-  const { callers } = useBroadcastStore()
-  const currentPath = router.location.pathname
+  // Use destructuring with default value to be 100% safe
+  const { alerts = [], isLoading } = useAlertStore()
 
-  const waitingCallers = callers.filter(c => c.status === 'waiting').length
+  // Guard against non-array values before calling .filter
+  const activeAlerts = Array.isArray(alerts) 
+    ? alerts.filter(a => a.is_active !== false) 
+    : []
 
   return (
-    <aside className="w-14 bg-road border-r border-marking flex flex-col items-center py-3 gap-1 flex-shrink-0">
-      {NAV.map(item => {
-        const isActive = currentPath === item.to
-        const badge = item.to === '/callers' && waitingCallers > 0 ? waitingCallers : null
-
-        return (
-          <Link key={item.to} to={item.to}>
-            <div
-              className={cn(
-                'relative w-10 h-10 flex items-center justify-center rounded',
-                'font-ui text-base transition-all duration-150 cursor-pointer',
-                'hover:bg-lane hover:text-ink',
-                isActive
-                  ? 'bg-amber-subtle text-amber border border-amber/30'
-                  : 'text-ink-dim border border-transparent'
-              )}
-              title={item.label}
-            >
-              {item.icon}
-              {badge !== null && (
-                <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-signal-red text-white
-                                 font-ui text-2xs flex items-center justify-center">
-                  {badge}
-                </span>
-              )}
+    <aside className="w-64 border-r border-lane bg-asphalt/80 flex flex-col overflow-hidden">
+      <div className="p-4 flex-1 overflow-y-auto custom-scrollbar">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="font-ui text-[10px] tracking-widest text-ink-dim uppercase">
+            Road Alerts ({activeAlerts.length})
+          </h2>
+          {isLoading && <div className="w-2 h-2 rounded-full bg-amber animate-pulse" />}
+        </div>
+        
+        <div className="flex flex-col gap-3">
+          {activeAlerts.length > 0 ? (
+            activeAlerts.map((alert) => (
+              <div key={alert.id} className="p-3 bg-asphalt border-l-2 border-amber rounded-r shadow-md">
+                <div className="text-[10px] font-bold text-amber uppercase">{alert.route}</div>
+                <div className="text-[11px] text-ink-dim mt-1 leading-tight">{alert.detail}</div>
+              </div>
+            ))
+          ) : (
+            <div className="text-[10px] text-ink-dim italic text-center py-8 opacity-50">
+              No active alerts in KZN
             </div>
-          </Link>
-        )
-      })}
+          )}
+        </div>
+      </div>
 
-      {/* Spacer */}
-      <div className="flex-1" />
-
-      {/* Version */}
-      <span className="font-mono text-2xs text-ink-ghost rotate-90 tracking-widest">v1.0</span>
+      <div className="p-4 border-t border-lane bg-black/20">
+        <div className="flex items-center justify-between text-[9px] font-mono">
+          <span className="text-ink-dim uppercase">System Status</span>
+          <span className="text-signal-green">NOMINAL</span>
+        </div>
+      </div>
     </aside>
   )
 }

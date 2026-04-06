@@ -2,10 +2,10 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "longhaulfm-app",
   "version": "0.1.0",
-  "identifier": "com.user.longhaulfm-app",
+  "identifier": "com.longhaulfm.app",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "https://glenna-paradigmatical-disillusionedly.ngrok-free.dev",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
@@ -13,13 +13,13 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "longhaulfm-app",
+        "title": "Longhaul FM",
         "width": 800,
         "height": 600
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://i.scdn.co https://*.scdn.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev wss://glenna-paradigmatical-disillusionedly.ngrok-free.dev https://accounts.spotify.com https://api.spotify.com"
     }
   },
   "bundle": {
@@ -33,17 +33,15 @@
       "icons/icon.ico"
     ]
   },
-  {
-    "plugins": {
-      "deep-link": {
-        "mobile": [
-          {
-            "host": "longhaul-fm.co.za",
-            "pathPrefix": ["/callback"],
-            "appLink": true
-          }
-        ]
-      }
+  "plugins": {
+    "deep-link": {
+      "mobile": [
+        {
+          "host": "longhaul-fm.co.za",
+          "pathPrefix": ["/callback"],
+          "appLink": true
+        }
+      ]
     }
   }
 }

@@ -1,12 +1,20 @@
 {
-  "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default",
+  "$schema": "../gen/schemas/desktop-capability.json",
+  "identifier": "main-capability",
   "description": "Capability for the main window",
   "windows": ["main"],
   "permissions": [
     "core:default",
+    "core:event:default",
+    "core:webview:default",
+    "core:window:default",
+    "core:app:default",
+    "core:resources:default",
+    "core:image:default",
+    "core:path:default",
+    "core:menu:default",
+    "core:tray:default",
     "opener:default",
-    "deep-link:default",
-    "event:default"
+    "deep-link:default"
   ]
 }

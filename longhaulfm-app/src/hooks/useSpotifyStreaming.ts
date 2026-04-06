@@ -1,47 +1,46 @@
-import { useEffect, useState } from 'react';
-import { onOpenUrl } from '@tauri-apps/plugin-deep-link';
-import { spotifyClient, PLAYLIST_ID } from '../lib/spotify/client';
+// src/hooks/useSpotifyStreaming.ts
+import { useEffect, useState } from 'react'
+import { useAuthStore } from '@/stores/authStore'
+import { useBroadcastStore } from '@/stores/broadcastStore'
 
 export function useSpotifyStreaming() {
-  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const { spotifyToken } = useAuthStore()
+  const { setNowPlaying } = useBroadcastStore()
+  const [playbackState, setPlaybackState] = useState<any>(null)
+  const [deviceId, setDeviceId] = useState<string | null>(null)
 
   useEffect(() => {
-    // 1. Handle Deep Link Redirects (for Android Auth)
-    onOpenUrl((urls) => {
-      const url = new URL(urls[0]);
-      if (url.pathname === '/callback') {
-        // The SDK usually picks up the code from the URL automatically
-        // but you may need to trigger a re-auth check here.
-        window.location.href = url.href; 
-      }
-    });
+    if (!spotifyToken) return
 
-    // 2. Initialize Spotify Player
+    const script = document.createElement('script')
+    script.src = 'https://sdk.scdn.co/spotify-player.js'
+    script.async = true
+    document.body.appendChild(script)
+
     window.onSpotifyWebPlaybackSDKReady = () => {
       const player = new window.Spotify.Player({
-        name: 'LongHaul FM Android',
-        getOAuthToken: async (cb: (token: string) => void) => {
-          const token = await spotifyClient.getAccessToken();
-          cb(token?.access_token || "");
-        },
+        name: 'Long Haul FM Master Console',
+        getOAuthToken: cb => { cb(spotifyToken) },
         volume: 0.8
-      });
+      })
+
+      player.addListener('player_state_changed', (state) => {
+        if (!state) return
+        setPlaybackState(state)
+        setNowPlaying(state.track_window.current_track)
+        useBroadcastStore.setState({ elapsed: Math.floor(state.position / 1000) })
+      })
 
       player.addListener('ready', ({ device_id }) => {
-        console.log('Player Ready');
-        setDeviceId(device_id);
-      });
+        setDeviceId(device_id)
+        console.log('🚛 Station Player Ready!')
+      })
 
-      player.connect();
-    };
-  }, []);
+      player.connect()
+    }
 
-  const playLongHaul = async () => {
-    if (!deviceId) return;
-    await spotifyClient.player.startResumePlayback(deviceId, {
-      context_uri: `spotify:playlist:${PLAYLIST_ID}`
-    });
-  };
+    return () => { script.remove() }
+  }, [spotifyToken])
 
-  return { playLongHaul, deviceId };
+  return { playbackState, deviceId }
 }

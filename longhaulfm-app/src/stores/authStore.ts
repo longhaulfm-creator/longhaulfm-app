@@ -1,79 +1,61 @@
-// src/stores/authStore.ts
 import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
 import { supabase } from '@/lib/supabase'
-import type { User, Session } from '@supabase/supabase-js'
-import type { Profile, UserRole } from '@/types'
 
-interface AuthStore {
-  user:        User | null
-  session:     Session | null
-  profile:     Profile | null
-  isLoading:   boolean
-  isReady:     boolean
-
-  signIn:      (email: string, password: string) => Promise<string | null>
-  signOut:     () => Promise<void>
-  loadProfile: () => Promise<void>
-  init:        () => () => void
+interface AuthState {
+  profile: any | null
+  spotifyToken: string | null
+  isLoading: boolean
+  signIn: (email: string, pass: string) => Promise<string | null>
+  signOut: () => Promise<void>
+  setSpotifyToken: (token: string) => void
 }
 
-export const useAuthStore = create<AuthStore>((set, get) => ({
-  user:      null,
-  session:   null,
-  profile:   null,
-  isLoading: false,
-  isReady:   false,
+export const useAuthStore = create<AuthState>()(
+  persist(
+    (set) => ({
+      profile: null,
+      spotifyToken: null,
+      isLoading: false,
 
-  signIn: async (email, password) => {
-    set({ isLoading: true })
-    const { error } = await supabase.auth.signInWithPassword({ email, password })
-    set({ isLoading: false })
-    if (error) return error.message
-    await get().loadProfile()
-    return null
-  },
+      setSpotifyToken: (token: string) => {
+        set({ spotifyToken: token })
+        // Sync to Supabase so the whole station knows we are linked
+        supabase
+          .from('broadcast_state')
+          .update({ spotify_token: token })
+          .eq('id', 1)
+          .then()
+      },
 
-  signOut: async () => {
-    await supabase.auth.signOut()
-    set({ user: null, session: null, profile: null })
-  },
+      signIn: async (email, password) => {
+        set({ isLoading: true })
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+          if (error) throw error
 
-  loadProfile: async () => {
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return
-    const { data } = await supabase
-      .from('profiles')
-      .select('*')
-      .eq('id', user.id)
-      .single()
-    set({ profile: data as Profile })
-  },
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single()
 
-  init: () => {
-    // Load initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      set({ session, user: session?.user ?? null, isReady: true })
-      if (session?.user) get().loadProfile()
-    })
+          set({ profile, isLoading: false })
+          return null
+        } catch (err: any) {
+          set({ isLoading: false })
+          return err.message
+        }
+      },
 
-    // Listen for auth changes
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        set({ session, user: session?.user ?? null })
-        if (session?.user) get().loadProfile()
-        else set({ profile: null })
-      }
-    )
-
-    return () => subscription.unsubscribe()
-  },
-}))
-
-// Role helpers
-export function hasRole(role: UserRole, allowed: UserRole[]): boolean {
-  return allowed.includes(role)
-}
-
-export function isPresenter(role?: UserRole | null): boolean {
-  return role === 'admin' || role === 'presenter'
-}
+      signOut: async () => {
+        await supabase.auth.signOut()
+        set({ profile: null, spotifyToken: null })
+      },
+    }),
+    {
+      name: 'longhaul-auth-storage',
+      storage: createJSONStorage(() => localStorage),
+    }
+  )
+)

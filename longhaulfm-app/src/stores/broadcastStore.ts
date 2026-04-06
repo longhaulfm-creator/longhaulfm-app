@@ -1,130 +1,109 @@
-// src/stores/broadcastStore.ts
 import { create } from 'zustand'
 import { supabase } from '@/lib/supabase'
-import type { BroadcastSource, BroadcastState, NowPlaying, Caller } from '@/types'
+import type { BroadcastState, Caller } from '@/types'
+
+interface NowPlaying {
+  track_title: string
+  track_artist: string
+  artwork_url: string
+  duration_secs: number
+  source: 'spotify' | 'live' | 'talk'
+}
 
 interface BroadcastStore {
-  state:        BroadcastState | null
-  nowPlaying:   NowPlaying | null
-  callers:      Caller[]
-  isSwitching:  boolean
-  fadeDuration: number   // seconds
-  elapsed:      number   // local tick for progress bar
-
-  setFadeDuration:     (s: number) => void
-  switchSource:        (source: BroadcastSource, showId?: string) => Promise<void>
-  toggleOnAir:         () => Promise<void>
-  updateCallerStatus:  (id: string, status: Caller['status']) => Promise<void>
-  addCaller:           (caller: Omit<Caller, 'id' | 'queued_at' | 'answered_at' | 'ended_at'>) => Promise<void>
-  fetchInitial:        () => Promise<void>
-  subscribeRealtime:   () => () => void
-  tickElapsed:         () => void
+  state: BroadcastState | null
+  callers: Caller[]
+  nowPlaying: NowPlaying | null
+  spotifyToken: string | null
+  isLoading: boolean
+  elapsed: number
+  fetchInitial: () => Promise<void>
+  subscribeRealtime: () => () => void
+  setSpotifyToken: (token: string) => void
+  setNowPlaying: (track: any) => void
+  tickElapsed: () => void
 }
 
 export const useBroadcastStore = create<BroadcastStore>((set, get) => ({
-  state:        null,
-  nowPlaying:   null,
-  callers:      [],
-  isSwitching:  false,
-  fadeDuration: 4,
-  elapsed:      0,
+  state: null,
+  callers: [],
+  nowPlaying: null,
+  spotifyToken: typeof window !== 'undefined' ? localStorage.getItem('spotify_access_token') : null,
+  isLoading: true,
+  elapsed: 0,
 
-  setFadeDuration: (s) => set({ fadeDuration: s }),
-
-  tickElapsed: () => {
-    const { nowPlaying, elapsed } = get()
-    if (!nowPlaying?.duration_secs) return
-    set({ elapsed: Math.min(elapsed + 1, nowPlaying.duration_secs) })
+  setSpotifyToken: (token: string) => {
+    set({ spotifyToken: token })
+    localStorage.setItem('spotify_access_token', token)
   },
 
-  fetchInitial: async () => {
-    const [{ data: state }, { data: np }, { data: callers }] = await Promise.all([
-      supabase.from('broadcast_state').select('*').eq('id', 1).single(),
-      supabase.from('now_playing').select('*').eq('id', 1).single(),
-      supabase.from('call_queue')
-        .select('*')
-        .in('status', ['waiting', 'on_air'])
-        .order('queued_at'),
-    ])
+  // 1. Action to update track metadata from the Spotify SDK
+  setNowPlaying: (track: any) => {
     set({
-      state:      state as BroadcastState,
-      nowPlaying: np as NowPlaying,
-      callers:    (callers ?? []) as Caller[],
-      elapsed:    (np as NowPlaying)?.elapsed_secs ?? 0,
+      nowPlaying: {
+        track_title: track.name,
+        track_artist: track.artists.map((a: any) => a.name).join(', '),
+        artwork_url: track.album.images[0]?.url || '',
+        duration_secs: Math.floor(track.duration_ms / 1000),
+        source: 'spotify'
+      }
     })
   },
 
-  switchSource: async (source, showId) => {
-    set({ isSwitching: true })
-    try {
-      const { data: { user } } = await supabase.auth.getUser()
-      const { error } = await supabase.rpc('switch_broadcast_source', {
-        p_source:   source,
-        p_operator: user?.id ?? null,
-        p_show_id:  showId ?? null,
-      })
-      if (error) throw error
-      set(s => ({ state: s.state ? { ...s.state, current_source: source } : s.state }))
-    } finally {
-      set({ isSwitching: false })
+  tickElapsed: () => {
+    const { elapsed, nowPlaying } = get()
+    if (nowPlaying && elapsed < nowPlaying.duration_secs) {
+      set({ elapsed: elapsed + 1 })
     }
   },
 
-  toggleOnAir: async () => {
-    const current = get().state?.is_on_air ?? true
-    await supabase
-      .from('broadcast_state')
-      .update({ is_on_air: !current, updated_at: new Date().toISOString() })
-      .eq('id', 1)
-    set(s => ({ state: s.state ? { ...s.state, is_on_air: !current } : s.state }))
-  },
+  fetchInitial: async () => {
+    set({ isLoading: true })
+    const savedToken = localStorage.getItem('spotify_access_token')
+    
+    try {
+      const { data: stateData, error: stateError } = await supabase
+        .from('broadcast_state')
+        .select('*')
+        .maybeSingle()
 
-  updateCallerStatus: async (id, status) => {
-    const updates: Record<string, string> = { status }
-    if (status === 'on_air')  updates.answered_at = new Date().toISOString()
-    if (status === 'done' || status === 'dropped') updates.ended_at = new Date().toISOString()
-    await supabase.from('call_queue').update(updates).eq('id', id)
-    set(s => ({
-      callers: s.callers.map(c => c.id === id ? { ...c, status, ...updates } : c)
-    }))
-  },
+      if (stateError) throw stateError
 
-  addCaller: async (caller) => {
-    const { data, error } = await supabase
-      .from('call_queue')
-      .insert(caller)
-      .select()
-      .single()
-    if (error) throw error
-    set(s => ({ callers: [...s.callers, data as Caller] }))
+      const { data: callerData } = await supabase
+        .from('callers')
+        .select('*')
+        .in('status', ['waiting', 'on_air'])
+
+      set({ 
+        state: stateData || { 
+          id: 1, 
+          current_source: 'spotify', 
+          is_on_air: false, 
+          listener_count: 0 
+        }, 
+        callers: callerData || [],
+        spotifyToken: savedToken,
+        isLoading: false 
+      })
+    } catch (error) {
+      console.error('❌ BroadcastStore Fetch Error:', error)
+      set({ isLoading: false })
+    }
   },
 
   subscribeRealtime: () => {
-    const channel = supabase
-      .channel('broadcast-ops')
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'now_playing', filter: 'id=eq.1' },
-        ({ new: data }) => {
-          set({ nowPlaying: data as NowPlaying, elapsed: (data as NowPlaying).elapsed_secs ?? 0 })
-        }
+    const channel = supabase.channel('broadcast-ops')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_state' }, 
+        (payload) => set({ state: payload.new as BroadcastState })
       )
-      .on('postgres_changes',
-        { event: 'UPDATE', schema: 'public', table: 'broadcast_state', filter: 'id=eq.1' },
-        ({ new: data }) => set({ state: data as BroadcastState })
-      )
-      .on('postgres_changes',
-        { event: '*', schema: 'public', table: 'call_queue' },
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'callers' },
         async () => {
-          const { data } = await supabase
-            .from('call_queue')
-            .select('*')
-            .in('status', ['waiting', 'on_air'])
-            .order('queued_at')
-          set({ callers: (data ?? []) as Caller[] })
+          const { data } = await supabase.from('callers').select('*').in('status', ['waiting', 'on_air'])
+          set({ callers: data || [] })
         }
       )
       .subscribe()
 
     return () => { supabase.removeChannel(channel) }
-  },
+  }
 }))
