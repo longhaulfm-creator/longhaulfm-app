@@ -16,7 +16,7 @@ export function SourceSwitcher() {
   ]
 
   return (
-    <div className="flex items-center gap-4 bg-asphalt/50 p-2 rounded border border-lane">
+    <div className="flex items-center gap-4 bg-brand-dark p-2 rounded border border-lane">
       {sources.map((src) => (
         <button
           key={src.id}

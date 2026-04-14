@@ -6,6 +6,18 @@ const redirectUri = "https://longhaul-fm.co.za/callback";
 export const spotifyClient = SpotifyApi.withUserAuthorization(
   clientId,
   redirectUri,
+  [
+    "streaming",
+    "user-read-playback-state",
+    "user-modify-playback-state",
+    "user-read-email", // Added scope
+    "user-read-private", // Added scope
+  ]
+);
+
+export const spotifyClient = SpotifyApi.withUserAuthorization(
+  clientId,
+  redirectUri,
   ["streaming", "user-read-playback-state", "user-modify-playback-state"]
 );
 

@@ -130,3 +130,13 @@ export interface PartnerLocation {
   special_expires: string | null
   updated_at:      string
 }
+
+export interface SpotifyAuth {
+  id: string; // 'master-dj-token'
+  access_token: string;
+  refresh_token: string;
+  expires_at: string; // ISO timestamp
+  token_type: string;
+  scope: string;
+}
+

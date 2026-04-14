@@ -16,13 +16,14 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 1420,
     strictPort: true,
-    // On Windows the Tauri CLI uses this host
-    host: command === 'serve' ? '0.0.0.0' : undefined,
+    // We force 0.0.0.0 so it listens on your local IP (192.168.8.2)
+    host: '0.0.0.0', 
     https: true, 
     hmr: {
-      protocol: 'wss', // Changed from 'ws' to 'wss' to match HTTPS
-      host: 'localhost',
-      port: 1421,
+      protocol: 'wss',
+      // This MUST be your local IP so the tablet knows where to send updates
+      host: '192.168.8.2', 
+      port: 1420,
     },
     watch: {
       ignored: ['**/src-tauri/**'],

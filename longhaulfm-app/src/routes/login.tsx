@@ -1,155 +1,152 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useAuthStore } from '@/stores/authStore'
 import { Button } from '@/components/ui'
 import { cn } from '@/lib/utils'
-import { Eye, EyeOff, Lock, Mail, Music } from 'lucide-react'
+import { Eye, EyeOff, Lock, Mail, ShieldAlert, Chrome, Facebook } from 'lucide-react'
 
 export const Route = createFileRoute('/login')({
   component: LoginPage,
 })
 
 function LoginPage() {
-  const { signIn, isLoading } = useAuthStore()
+  const { user, signIn, signInWithSocial, isLoading } = useAuthStore()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async () => {
+  // Redirect if already authenticated
+  useEffect(() => {
+    if (user) {
+      navigate({ to: '/' })
+    }
+  }, [user, navigate])
+
+  const handleSubmit = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
     if (!email || !password) return
-    setError(null)
     
+    setError(null)
     const err = await signIn(email, password)
     if (err) {
       setError(err)
-    } else {
-      // After Supabase login, we stay here to ensure they connect Spotify 
-      // or you can auto-navigate if already connected.
-      navigate({ to: '/' })
     }
   }
 
-  // ✅ DYNAMIC SPOTIFY LOGIN LOGIC
-  const handleSpotifyLogin = () => {
-    const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID
-    if (!clientId) {
-      setError("Missing Spotify Client ID")
-      return
+  const handleSocialLogin = async (provider: 'google' | 'facebook') => {
+    setError(null)
+    const err = await signInWithSocial(provider)
+    if (err) {
+      setError(err)
     }
-
-    // This detects if you are on ngrok or localhost automatically
-    const redirectUri = window.location.origin + "/auth/callback"
-    
-    const scopes = [
-      "streaming",
-      "user-read-email",
-      "user-read-private",
-      "user-modify-playback-state",
-      "user-read-playback-state"
-    ].join(" ")
-
-    const authUrl = `https://accounts.spotify.com/authorize?client_id=${clientId}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${encodeURIComponent(scopes)}&show_dialog=true`
-
-    // Redirect the entire window to Spotify
-    window.location.href = authUrl
-  }
-
-  const handleKey = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter') handleSubmit()
   }
 
   return (
-    <div className="road-texture h-screen w-screen flex items-center justify-center bg-asphalt p-4 overflow-hidden">
-      <div className="fixed inset-x-0 top-0 h-1 bg-amber shadow-[0_0_15px_rgba(245,166,35,0.6)]" />
-      <div className="fixed inset-x-0 bottom-0 h-1 bg-amber/20" />
+    <div className="h-screen w-screen flex items-center justify-center bg-brand-dark p-4 overflow-hidden relative">
+      {/* Background Ambience */}
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,_var(--tw-gradient-stops))] from-gold/5 via-transparent to-transparent opacity-50" />
 
-      <div className="relative z-10 w-full max-w-sm flex flex-col gap-8 p-10 bg-road/95 border border-marking rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.5)] backdrop-blur-sm animate-fade-in">
-        
-        <div className="text-center flex flex-col gap-2">
-          <h1 className="font-display text-4xl md:text-5xl tracking-widest text-amber drop-shadow-glow">
-            🚛 LONG HAUL
-          </h1>
-          <p className="font-ui text-[10px] tracking-[0.3em] uppercase text-ink-dim font-bold">
-            KZN OPS CENTER
-          </p>
+      <div className="relative z-10 w-full max-w-sm flex flex-col gap-6 p-8 bg-brand border border-white/10 rounded-xl shadow-2xl animate-fade-in">
+        <div className="text-center flex flex-col gap-1">
+          <h1 className="font-header text-3xl tracking-[0.2em] text-gold uppercase">🚛 LONG HAUL</h1>
+          <p className="font-ui text-[9px] tracking-[0.3em] uppercase text-white/40 font-bold">KZN OPS CENTER</p>
         </div>
 
-        <div className="flex flex-col gap-5">
+        {/* --- SOCIAL LOGIN SECTION --- */}
+        <div className="flex flex-col gap-3">
+          <p className="font-ui text-[8px] text-center uppercase tracking-[0.2em] text-white/20">Join the Crew</p>
+          <div className="grid grid-cols-2 gap-3">
+            {/* Google Login */}
+            <button 
+              onClick={() => handleSocialLogin('google')}
+              className="flex items-center justify-center gap-2 bg-white/5 border border-white/10 hover:bg-white/10 py-3 rounded-lg transition-all active:scale-95 group"
+            >
+              <Chrome size={16} className="text-white/40 group-hover:text-white transition-colors" />
+              <span className="font-header text-[10px] tracking-widest uppercase text-white/80 group-hover:text-white">Google</span>
+            </button>
+
+            {/* Facebook Login */}
+            <button 
+              onClick={() => handleSocialLogin('facebook')}
+              className="flex items-center justify-center gap-2 bg-[#1877F2]/10 border border-[#1877F2]/20 hover:bg-[#1877F2]/20 py-3 rounded-lg transition-all active:scale-95 group"
+            >
+              <Facebook size={16} className="text-[#1877F2] opacity-80 group-hover:opacity-100" fill="currentColor" />
+              <span className="font-header text-[10px] tracking-widest uppercase text-white/80 group-hover:text-white">Facebook</span>
+            </button>
+          </div>
+        </div>
+
+        {/* --- SEPARATOR --- */}
+        <div className="flex items-center gap-4">
+          <div className="h-[1px] flex-1 bg-white/5" />
+          <span className="font-ui text-[8px] uppercase text-white/10 tracking-widest">OR</span>
+          <div className="h-[1px] flex-1 bg-white/5" />
+        </div>
+
+        {/* --- TRADITIONAL LOGIN --- */}
+        <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-1.5">
-            <label className="font-ui text-xs font-bold tracking-widest uppercase text-ink-muted px-1">
-              Presenter Email
-            </label>
+            <label className="font-ui text-[9px] font-bold uppercase text-white/30 tracking-widest px-1">Operator Email</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-dim" />
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
               <input
                 className={cn(
-                  'w-full bg-black/40 border border-marking rounded-lg py-3 pl-10 pr-4 text-white focus:outline-none focus:border-amber transition-all',
+                  'w-full bg-brand-dark border border-white/10 rounded-lg py-3 pl-10 pr-4 text-white font-ui text-xs focus:outline-none focus:border-gold transition-all',
                   error && 'border-signal-red bg-signal-red/5'
                 )}
                 type="email"
                 placeholder="driver@longhaulfm.co.za"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                onKeyDown={handleKey}
               />
             </div>
           </div>
 
           <div className="flex flex-col gap-1.5">
-            <label className="font-ui text-xs font-bold tracking-widest uppercase text-ink-muted px-1">
-              Security Key
-            </label>
+            <label className="font-ui text-[9px] font-bold uppercase text-white/30 tracking-widest px-1">Security Key</label>
             <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink-dim" />
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/20" />
               <input
                 className={cn(
-                  'w-full bg-black/40 border border-marking rounded-lg py-3 pl-10 pr-12 text-white focus:outline-none focus:border-amber transition-all',
+                  'w-full bg-brand-dark border border-white/10 rounded-lg py-3 pl-10 pr-12 text-white font-ui text-xs focus:outline-none focus:border-gold transition-all',
                   error && 'border-signal-red bg-signal-red/5'
                 )}
                 type={showPassword ? 'text' : 'password'}
                 placeholder="••••••••"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                onKeyDown={handleKey}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-ink-dim hover:text-amber transition-colors"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-white/20 hover:text-gold"
               >
-                {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
               </button>
             </div>
           </div>
 
-          {error && <p className="text-xs text-signal-red text-center animate-shake">{error}</p>}
+          {error && (
+            <div className="flex items-center justify-center gap-2 text-signal-red">
+              <ShieldAlert size={14} />
+              <p className="text-[9px] font-bold uppercase tracking-tight">{error}</p>
+            </div>
+          )}
 
           <Button
-            variant="primary"
-            className="w-full h-12 mt-2 font-display tracking-widest text-base shadow-[0_0_20px_rgba(245,166,35,0.2)]"
+            className="w-full h-12 mt-2 font-header tracking-[0.2em] text-sm bg-gold text-brand-dark hover:bg-gold-bright transition-all active:scale-95"
             loading={isLoading}
-            onClick={handleSubmit}
+            type="submit"
           >
             ENGAGE SYSTEM
           </Button>
 
-          {/* 🎵 SPOTIFY CONNECTOR */}
-          <div className="relative py-4 flex items-center">
-            <div className="flex-grow border-t border-marking"></div>
-            <span className="flex-shrink mx-4 font-ui text-[9px] text-ink-dim tracking-widest uppercase">External Link</span>
-            <div className="flex-grow border-t border-marking"></div>
-          </div>
-
-          <button
-            onClick={handleSpotifyLogin}
-            className="w-full h-12 flex items-center justify-center gap-3 bg-[#1DB954] hover:bg-[#1ed760] text-black font-display tracking-widest text-sm rounded-lg transition-all active:scale-95"
-          >
-            <Music size={18} fill="black" />
-            CONNECT SPOTIFY
-          </button>
-        </div>
+          <p className="text-[8px] text-center text-white/10 font-ui uppercase tracking-[0.1em] mt-2">
+            Authorized Personnel Only — Session Logged
+          </p>
+        </form>
       </div>
     </div>
   )

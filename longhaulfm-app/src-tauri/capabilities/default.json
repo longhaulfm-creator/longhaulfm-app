@@ -2,7 +2,9 @@
   "$schema": "../gen/schemas/desktop-capability.json",
   "identifier": "main-capability",
   "description": "Capability for the main window",
-  "windows": ["main"],
+  "windows": [
+    "main"
+  ],
   "permissions": [
     "core:default",
     "core:event:default",
@@ -15,6 +17,7 @@
     "core:menu:default",
     "core:tray:default",
     "opener:default",
-    "deep-link:default"
+    "deep-link:default",
+    "os:default"
   ]
 }

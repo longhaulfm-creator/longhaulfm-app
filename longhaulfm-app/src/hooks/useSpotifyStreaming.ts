@@ -1,46 +1,74 @@
-// src/hooks/useSpotifyStreaming.ts
-import { useEffect, useState } from 'react'
-import { useAuthStore } from '@/stores/authStore'
-import { useBroadcastStore } from '@/stores/broadcastStore'
+import { useEffect, useState, useRef } from 'react';
+import { useBroadcastStore } from '../stores/broadcastStore';
 
-export function useSpotifyStreaming() {
-  const { spotifyToken } = useAuthStore()
-  const { setNowPlaying } = useBroadcastStore()
-  const [playbackState, setPlaybackState] = useState<any>(null)
-  const [deviceId, setDeviceId] = useState<string | null>(null)
+export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
+  const [isReady, setIsReady] = useState(false);
+  const [deviceId, setDeviceId] = useState<string | null>(null);
+  const [playbackState, setPlaybackState] = useState<any>(null);
+  const { setNowPlaying } = useBroadcastStore();
+  const playerRef = useRef<any>(null);
 
   useEffect(() => {
-    if (!spotifyToken) return
+    // Both Admin and DJ need the SDK ready for session transfers
+    const masterRoles = ['admin', 'dj'];
+    if (!masterRoles.includes(userRole) || !accessToken) return;
 
-    const script = document.createElement('script')
-    script.src = 'https://sdk.scdn.co/spotify-player.js'
-    script.async = true
-    document.body.appendChild(script)
+    const setupPlayer = async () => {
+      if (playerRef.current) return;
 
-    window.onSpotifyWebPlaybackSDKReady = () => {
-      const player = new window.Spotify.Player({
+      const player = new (window as any).Spotify.Player({
         name: 'Long Haul FM Master Console',
-        getOAuthToken: cb => { cb(spotifyToken) },
-        volume: 0.8
-      })
+        getOAuthToken: (cb: (t: string) => void) => cb(accessToken),
+        volume: 0.5
+      });
 
-      player.addListener('player_state_changed', (state) => {
-        if (!state) return
-        setPlaybackState(state)
-        setNowPlaying(state.track_window.current_track)
-        useBroadcastStore.setState({ elapsed: Math.floor(state.position / 1000) })
-      })
+      player.addListener('ready', ({ device_id }: { device_id: string }) => {
+        console.log('✅ Signal Connected to Device:', device_id);
+        setDeviceId(device_id);
+        setIsReady(true);
+      });
 
-      player.addListener('ready', ({ device_id }) => {
-        setDeviceId(device_id)
-        console.log('🚛 Station Player Ready!')
-      })
+      player.addListener('player_state_changed', (state: any) => {
+        if (state) {
+          setPlaybackState(state);
+          // This updates the store, which pushes metadata to Supabase/Ably
+          setNowPlaying(state);
+        }
+      });
 
-      player.connect()
+      player.connect();
+      playerRef.current = player;
+    };
+
+    if (!(window as any).Spotify) {
+      const script = document.createElement("script");
+      script.src = "https://sdk.scdn.co/spotify-player.js";
+      script.async = true;
+      document.body.appendChild(script);
+      (window as any).onSpotifyWebPlaybackSDKReady = setupPlayer;
+    } else {
+      setupPlayer();
     }
 
-    return () => { script.remove() }
-  }, [spotifyToken])
+    return () => {
+      if (playerRef.current) {
+        playerRef.current.disconnect();
+        playerRef.current = null;
+      }
+    };
+  }, [accessToken, userRole, setNowPlaying]);
 
-  return { playbackState, deviceId }
-}
+  const togglePlay = async (play: boolean) => {
+    if (!playerRef.current) return;
+    if (play) await playerRef.current.resume();
+    else await playerRef.current.pause();
+  };
+
+  return { 
+    player: playerRef.current, 
+    isReady, 
+    deviceId, 
+    playbackState, 
+    togglePlay 
+  };
+};

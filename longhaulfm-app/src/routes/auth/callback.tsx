@@ -7,6 +7,9 @@ export const Route = createFileRoute('/auth/callback')({
   component: CallbackPage,
 })
 
+// Prevent double-execution in React Strict Mode
+let isExchanging = false;
+
 function CallbackPage() {
   const navigate = useNavigate()
   const { setSpotifyToken } = useAuthStore()
@@ -16,29 +19,27 @@ function CallbackPage() {
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
     
-    if (code) {
+    if (code && !isExchanging) {
       exchangeCode(code)
-    } else {
+    } else if (!code) {
       setStatus("No code found in URL")
     }
   }, [])
 
   const exchangeCode = async (code: string) => {
     try {
+      isExchanging = true;
       setStatus('Exchanging Keys...')
       
       const clientId = import.meta.env.VITE_SPOTIFY_CLIENT_ID
       const clientSecret = import.meta.env.VITE_SPOTIFY_CLIENT_SECRET
-      
-      // IMPORTANT: This must match exactly what you registered in Spotify Dashboard
-      // Since you're using ngrok, this will resolve to the ngrok URL automatically
       const redirectUri = window.location.origin + window.location.pathname;
 
       if (!clientId || !clientSecret) {
         throw new Error("Missing Client ID or Secret in .env file")
       }
 
-      // FIX: Use the REAL Spotify Token endpoint, NOT the placeholder
+      // Updated to the REAL Spotify Endpoint
       const response = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
         headers: { 
@@ -57,17 +58,17 @@ function CallbackPage() {
       if (data.access_token) {
         setSpotifyToken(data.access_token)
         
-        // Persist the Refresh Token so the station stays alive
+        // Use UPSERT instead of UPDATE to handle missing rows
         const { error: supabaseError } = await supabase
           .from('broadcast_state')
-          .update({ 
+          .upsert({ 
+            id: 1,
             spotify_refresh_token: data.refresh_token,
             last_token_refresh: new Date().toISOString() 
-          })
-          .eq('id', 1)
+          }, { onConflict: 'id' })
 
         if (supabaseError) {
-          console.warn("Supabase Update Warning:", supabaseError)
+          console.warn("Supabase Sync Warning:", supabaseError.message)
         }
 
         setStatus('Success! Opening Terminal...')
@@ -78,6 +79,7 @@ function CallbackPage() {
     } catch (err: any) {
       console.error("Exchange Error:", err)
       setStatus(`Error: ${err.message}`)
+      isExchanging = false; // Allow retry on actual error
     }
   }
 

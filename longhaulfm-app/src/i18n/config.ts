@@ -27,15 +27,18 @@ i18n
       sn: { translation: sn },
     },
     fallbackLng: 'en',
-    lng: 'en', // default — presenter can switch in settings
+    // lng: 'en', // REMOVED: Let detection handle the initial state
     interpolation: {
-      escapeValue: false, // React already escapes
+      escapeValue: false, 
     },
     detection: {
-      // In Tauri we don't want URL or cookie detection — use localStorage only
       order: ['localStorage', 'navigator'],
+      lookupLocalStorage: 'longhaul_ui_lang', // Specific key for your app
       caches: ['localStorage'],
     },
+    react: {
+      useSuspense: false, // Better for Tauri/Mobile performance
+    }
   })
 
 export default i18n

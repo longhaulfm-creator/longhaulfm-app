@@ -1,174 +1,140 @@
-// src/components/PartnerPanel.tsx
-import { useEffect, useState } from 'react'
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 import { supabase } from '@/lib/supabase'
-import { fmtZAR, fmtRelative } from '@/lib/utils'
-import { Button, Spinner, Empty } from '@/components/ui'
+import { Spinner, Empty } from '@/components/ui'
+import { MapPin, Zap, ShieldCheck, Coffee, Fuel, UserCheck } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { PartnerLocation } from '@/types'
 
-const SERVICE_ICONS: Record<string, string> = {
-  truck_wash:   '🚿',
-  convenience:  '🏪',
-  parking:      '🅿',
-  fuel:         '⛽',
-  restaurant:   '🍽',
-  workshop:     '🔧',
+const SERVICE_ICONS: Record<string, React.ReactNode> = {
+  truck_wash: <UserCheck size={14} />,
+  convenience: <Coffee size={14} />,
+  fuel: <Fuel size={14} />,
 }
 
-function usePartnerLocations() {
-  return useQuery<PartnerLocation[]>({
+export function PartnerPanel() {
+  // Query 1: Logistics Nodes (Locations)
+  const { data: locations = [], isLoading: locLoading } = useQuery<PartnerLocation[]>({
     queryKey: ['partner-locations'],
     queryFn: async () => {
       const { data, error } = await supabase
         .from('partner_locations')
         .select('*')
-        .order('name')
+        .order('is_spotlighted', { ascending: false })
       if (error) throw error
       return data as PartnerLocation[]
     },
+    refetchInterval: 30000,
   })
-}
 
-function LocationEditor({ loc }: { loc: PartnerLocation }) {
-  const qc = useQueryClient()
-  const [bays,    setBays]    = useState(String(loc.bays_available ?? ''))
-  const [fuel,    setFuel]    = useState(String(loc.fuel_price_zar ?? ''))
-  const [special, setSpecial] = useState(loc.todays_special ?? '')
-  const [dirty,   setDirty]   = useState(false)
-
-  // Track dirty state
-  useEffect(() => {
-    const changed =
-      String(loc.bays_available ?? '') !== bays ||
-      String(loc.fuel_price_zar  ?? '') !== fuel ||
-      (loc.todays_special ?? '')        !== special
-    setDirty(changed)
-  }, [bays, fuel, special, loc])
-
-  const save = useMutation({
-    mutationFn: async () => {
-      const { error } = await supabase
-        .from('partner_locations')
-        .update({
-          bays_available: bays ? Number(bays) : null,
-          fuel_price_zar: fuel ? Number(fuel) : null,
-          todays_special: special || null,
-          updated_at:     new Date().toISOString(),
-        })
-        .eq('id', loc.id)
+  // Query 2: Network Sponsors (Advertisers Table)
+  const { data: advertisers = [], isLoading: adLoading } = useQuery({
+    queryKey: ['network-advertisers'],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('advertisers')
+        .select('*')
+        .eq('status', 'active')
       if (error) throw error
-    },
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['partner-locations'] })
-      setDirty(false)
-    },
+      return data
+    }
   })
 
+  const isLoading = locLoading || adLoading
+
   return (
-    <div className="bg-lane rounded border border-marking p-3 flex flex-col gap-3">
+    <div className="flex flex-col h-full bg-black/20 font-ui border-l border-white/5">
       {/* Header */}
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex-none p-3 border-b border-white/5 bg-black/40 flex justify-between items-center">
         <div>
-          <p className="font-ui text-sm font-bold text-ink">{loc.name}</p>
-          {loc.route && (
-            <p className="font-body text-2xs text-ink-dim mt-0.5">{loc.route}</p>
-          )}
+          <span className="text-[10px] font-black tracking-[0.2em] text-gold uppercase">
+            Partner Network
+          </span>
+          <p className="text-[8px] text-white/30 uppercase tracking-widest mt-0.5 font-mono">
+            Node Sync: Active
+          </p>
         </div>
-        <div className="flex gap-1 flex-wrap justify-end">
-          {(loc.services ?? []).map(s => (
-            <span key={s} title={s} className="text-base">{SERVICE_ICONS[s] ?? '●'}</span>
-          ))}
-        </div>
-      </div>
-
-      {/* Editable fields */}
-      <div className="grid grid-cols-2 gap-2">
-        <div className="flex flex-col gap-1">
-          <label className="font-ui text-2xs font-bold tracking-widest uppercase text-ink-muted">
-            Bays Available
-          </label>
-          <input
-            className="input"
-            type="number"
-            min={0}
-            placeholder="e.g. 12"
-            value={bays}
-            onChange={e => setBays(e.target.value)}
-          />
-        </div>
-        <div className="flex flex-col gap-1">
-          <label className="font-ui text-2xs font-bold tracking-widest uppercase text-ink-muted">
-            Diesel (R/L)
-          </label>
-          <input
-            className="input"
-            type="number"
-            step="0.01"
-            placeholder="e.g. 23.45"
-            value={fuel}
-            onChange={e => setFuel(e.target.value)}
-          />
+        <div className="bg-black/40 px-2 py-1 rounded border border-white/5 flex items-center gap-1.5">
+          <div className="w-1 h-1 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-[7px] text-white/50 font-mono">LIVE</span>
         </div>
       </div>
 
-      <div className="flex flex-col gap-1">
-        <label className="font-ui text-2xs font-bold tracking-widest uppercase text-ink-muted">
-          Today's Special
-        </label>
-        <textarea
-          className="input resize-none"
-          rows={2}
-          placeholder="e.g. Full wash + cab vacuum R180 — first 10 rigs only"
-          value={special}
-          onChange={e => setSpecial(e.target.value)}
-          data-selectable
-        />
-      </div>
+      {/* List Container */}
+      <div className="flex-1 overflow-y-auto p-3 space-y-6 custom-scrollbar">
+        {isLoading ? (
+          <div className="flex flex-col items-center justify-center py-20 opacity-20"><Spinner /></div>
+        ) : (
+          <>
+            {/* SECTION: COMMERCIAL SPONSORS */}
+            <section className="space-y-2">
+              <h3 className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em] px-1">Network Sponsors</h3>
+              <div className="grid grid-cols-1 gap-1.5">
+                {advertisers.map((ad) => (
+                  <div key={ad.id} className="bg-white/5 border border-white/5 p-2 rounded flex justify-between items-center group hover:border-gold/30 transition-all">
+                    <div className="flex flex-col">
+                      <span className="text-[10px] font-bold uppercase text-white/70 group-hover:text-gold transition-colors">{ad.company_name}</span>
+                      <span className="text-[6px] text-white/20 uppercase font-mono tracking-tighter">ID: {ad.id.split('-')[0]}</span>
+                    </div>
+                    <span className={cn(
+                      "text-[7px] px-1.5 py-0.5 rounded border font-black uppercase tracking-tighter",
+                      ad.subscription_tier === 'premium' ? "border-gold/50 text-gold bg-gold/5" : "border-white/10 text-white/30"
+                    )}>
+                      {ad.subscription_tier}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </section>
 
-      {/* Footer */}
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-body text-2xs text-ink-dim">
-          Updated {fmtRelative(loc.updated_at)}
-        </span>
-        <Button
-          variant="primary"
-          size="sm"
-          disabled={!dirty}
-          loading={save.isPending}
-          onClick={() => save.mutate()}
-        >
-          {dirty ? 'Save & Broadcast' : 'Up to date ✓'}
-        </Button>
-      </div>
+            {/* SECTION: LOGISTICS NODES */}
+            <section className="space-y-3">
+              <h3 className="text-[8px] font-black text-white/20 uppercase tracking-[0.3em] px-1">Logistics Nodes</h3>
+              {locations.map((loc) => (
+                <div key={loc.id} className={cn(
+                  "relative border rounded overflow-hidden transition-all duration-500",
+                  loc.is_spotlighted ? "bg-gold/5 border-gold/50 shadow-[0_0_25px_rgba(212,175,55,0.1)]" : "bg-white/5 border-white/5"
+                )}>
+                  <div className="p-3">
+                    <div className="flex justify-between items-start mb-4">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-header text-sm text-white tracking-tighter uppercase truncate leading-none">
+                            {loc.name}
+                          </h4>
+                          {loc.is_spotlighted && <ShieldCheck size={12} className="text-gold" />}
+                        </div>
+                        <div className="flex items-center gap-1 mt-1.5">
+                          <MapPin size={10} className="text-white/20" />
+                          <span className="text-[8px] text-white/40 font-mono uppercase tracking-widest">
+                            {loc.route || 'N3 Corridor'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
 
-      {save.isError && (
-        <p className="text-2xs text-signal-red">Failed to save — try again.</p>
-      )}
-    </div>
-  )
-}
-
-export function PartnerPanel() {
-  const { data: locations = [], isLoading } = usePartnerLocations()
-
-  return (
-    <div className="panel flex flex-col h-full">
-      <div className="panel-header">
-        <span className="panel-title">Partner Locations</span>
-        <span className="font-ui text-2xs text-ink-dim">
-          Updates broadcast to listeners in real time
-        </span>
-      </div>
-
-      <div className="flex-1 overflow-y-auto p-2 flex flex-col gap-2">
-        {isLoading && <div className="flex justify-center py-6"><Spinner /></div>}
-        {!isLoading && locations.length === 0 && (
-          <Empty message="No partner locations configured" />
+                    <div className="grid grid-cols-2 gap-px bg-white/5 rounded border border-white/5 overflow-hidden">
+                      <div className="bg-black/40 p-2">
+                        <span className="text-[7px] text-white/20 uppercase font-bold block mb-1">Diesel</span>
+                        <span className="text-xs font-header text-gold">R {loc.fuel_price_zar?.toFixed(2) || '--.--'}</span>
+                      </div>
+                      <div className="bg-black/40 p-2">
+                        <span className="text-[7px] text-white/20 uppercase font-bold block mb-1">Bays</span>
+                        <span className="text-xs font-header text-white">{loc.bays_available ?? 0} <span className="text-[8px] opacity-30 font-ui font-normal ml-1">FREE</span></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </section>
+          </>
         )}
-        {locations.map(loc => (
-          <LocationEditor key={loc.id} loc={loc} />
-        ))}
+      </div>
+
+      {/* Network ID Footer */}
+      <div className="p-2 border-t border-white/5 bg-black/40 text-center">
+        <span className="text-[6px] text-white/10 uppercase tracking-[0.5em] font-black">
+          Commercial Data Uplink // Long Haul FM
+        </span>
       </div>
     </div>
   )

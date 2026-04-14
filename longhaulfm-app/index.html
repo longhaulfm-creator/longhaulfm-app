@@ -1,6 +1,17 @@
 <!DOCTYPE html>
 <html lang="en">
   <head>
+    <script>
+  // SPOOF USER AGENT: Tricks Spotify into thinking the Android WebView is a Desktop Chrome
+  // This must run before the Spotify SDK is loaded.
+  if (navigator.userAgent.includes('Android') || navigator.userAgent.includes('Tauri')) {
+    Object.defineProperty(navigator, 'userAgent', {
+      get: function () { 
+        return 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'; 
+      }
+    });
+  }
+</script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Long Haul FM — Broadcast Dashboard</title>

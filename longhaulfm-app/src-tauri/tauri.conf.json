@@ -2,10 +2,10 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "longhaulfm-app",
   "version": "0.1.0",
-  "identifier": "com.longhaulfm.app",
+  "identifier": "za.co.longhaulfm",
   "build": {
     "beforeDevCommand": "bun run dev",
-    "devUrl": "https://glenna-paradigmatical-disillusionedly.ngrok-free.dev",
+    "devUrl": "https://192.168.8.2:1420",
     "beforeBuildCommand": "bun run build",
     "frontendDist": "../dist"
   },
@@ -19,7 +19,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://i.scdn.co https://*.scdn.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://glenna-paradigmatical-disillusionedly.ngrok-free.dev wss://glenna-paradigmatical-disillusionedly.ngrok-free.dev https://accounts.spotify.com https://api.spotify.com"
+      "csp": "default-src 'self' https://tauri.localhost; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://i.scdn.co https://longhaul-fm.co.za; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.spotify.com https://sdk.scdn.co https://*.ably.io wss://*.ably.io https://longhaul-fm.co.za;"
     }
   },
   "bundle": {
@@ -38,7 +38,7 @@
       "mobile": [
         {
           "host": "longhaul-fm.co.za",
-          "pathPrefix": ["/callback"],
+          "pathPrefix": ["/auth/callback"],
           "appLink": true
         }
       ]

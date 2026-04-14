@@ -28,14 +28,10 @@ export function StatusBar() {
 
   return (
     <header
-      className="h-12 bg-road border-b-2 border-amber flex items-center justify-between px-4 flex-shrink-0"
+      className="h-12 bg-brand-dark border-b-2 border-amber flex items-center justify-between px-4 flex-shrink-0"
       data-tauri-drag-region
     >
       {/* Logo */}
-      <div className="flex items-baseline gap-2">
-        <span className="font-display text-2xl tracking-wider text-amber">🚛 Long Haul FM</span>
-        <span className="font-ui text-2xs tracking-widest text-ink-dim uppercase">KZN · Broadcast Ops</span>
-      </div>
 
       {/* Centre: language indicators */}
       <div className="flex items-center gap-1.5">

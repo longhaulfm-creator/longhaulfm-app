@@ -86,7 +86,7 @@ export function PromoPanel() {
   }
 
   return (
-    <div className="panel flex flex-col h-full bg-asphalt/30">
+    <div className="panel flex flex-col h-full bg-brand-dark">
       <div className="panel-header border-b border-lane p-3">
         <span className="panel-title font-bold uppercase text-[10px] tracking-widest text-ink-dim">Ad Campaigns</span>
         <div className="flex items-center gap-2">
