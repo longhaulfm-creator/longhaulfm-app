@@ -48,9 +48,8 @@ function Dashboard() {
     required: boolean;
   } | null>(null)
 
-  // 1. Initialize the Spotify Engine and get device context
+  // 1. Initialize the Spotify Engine
   const streaming = useSpotifyStreaming(token || '', userRole)
-  
   const { isDucked } = useRadioStation()
   const { 
     isPlaying, systemKill, isFallbackActive, upcomingTracks, 
@@ -64,12 +63,13 @@ function Dashboard() {
       if (user && isMounted) {
         try {
           const { data } = await supabase.from('profiles').select('role').eq('id', user.id).single()
-          if (data && isMounted) setUserRole(data.role)
+          if (data && isMounted) setUserRole(data.role || 'subscriber')
         } catch (e) {
           console.error("Identity sync failure:", e)
         }
       }
       
+      // Tauri Update Logic
       try {
         const isTauri = !!(window as any).__TAURI_INTERNALS__;
         if (isTauri && isMounted) {
@@ -114,20 +114,15 @@ function Dashboard() {
     <div className="fixed inset-0 flex flex-col bg-brand-dark font-body text-white overflow-hidden">
       <FallbackPlayer />
 
-      {/* BRANDED UPDATE MODAL */}
+      {/* UPDATE MODAL */}
       {updateData && (
         <div className="fixed inset-0 z-[200] bg-brand-dark/95 backdrop-blur-xl flex items-center justify-center p-6">
           <div className="bg-black border border-gold/40 p-8 rounded-2xl max-w-sm w-full shadow-[0_0_80px_rgba(212,175,55,0.15)] text-center relative overflow-hidden">
-            <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-gold to-transparent opacity-50" />
             <div className="w-16 h-16 bg-gold/10 rounded-full flex items-center justify-center mx-auto mb-6">
               <Zap className="text-gold fill-gold/20" size={28} />
             </div>
             <h2 className="font-header text-2xl text-white uppercase tracking-tighter mb-1">Signal Upgrade</h2>
             <p className="text-gold text-[10px] font-black uppercase tracking-[0.3em] mb-6">v{updateData.version} detected</p>
-            <div className="bg-white/5 border border-white/5 rounded-lg p-4 mb-8 text-left">
-              <p className="text-[8px] text-white/30 uppercase tracking-widest mb-2 font-bold font-ui">Manifest Notes</p>
-              <p className="text-white/70 text-xs leading-relaxed italic font-body">{updateData.notes || "System optimizations."}</p>
-            </div>
             <a href={updateData.url} target="_blank" rel="noreferrer" className="flex items-center justify-center gap-3 w-full bg-gold text-brand-dark font-black py-4 rounded-lg uppercase tracking-widest text-xs">
               Update Frequency <ExternalLink size={14} />
             </a>
@@ -152,19 +147,29 @@ function Dashboard() {
           </div>
         )}
 
-        {/* 2. ADMIN PANEL INJECTION WITH HANDOVER PROPS */}
+        <header className="flex-none mb-3 flex items-start justify-between">
+          <UserIdentity />
+          
+          {/* INJECTED ADMIN PANEL - Positioned for accessibility */}
+          {userRole === 'admin' && (
+            <div className="hidden lg:block w-72 pointer-events-auto">
+              <AdminPanel 
+                deviceId={streaming.deviceId} 
+                togglePlay={streaming.togglePlay} 
+              />
+            </div>
+          )}
+        </header>
+
+        {/* Mobile Admin Toggle (If user is admin and screen is small) */}
         {userRole === 'admin' && (
-          <div className="fixed top-16 right-4 z-[100] w-72 max-w-[80vw] pointer-events-auto">
-            <AdminPanel 
-              deviceId={streaming.deviceId} 
-              togglePlay={streaming.togglePlay} 
-            />
+          <div className="lg:hidden mb-3">
+             <AdminPanel 
+                deviceId={streaming.deviceId} 
+                togglePlay={streaming.togglePlay} 
+              />
           </div>
         )}
-
-        <header className="flex-none mb-3">
-          <UserIdentity />
-        </header>
 
         <div className="flex gap-2 mb-3">
           <StatPill label="Signal Status" value={systemKill ? 'OFFLINE' : isPlaying ? 'LIVE' : 'IDLE'} colour={systemKill ? '#ef4444' : isPlaying ? '#22c55e' : '#3b82f6'} />

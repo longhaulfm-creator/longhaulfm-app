@@ -13,9 +13,13 @@ export const supabase = createClient(supabaseUrl, supabaseAnon, {
     persistSession: true,
     autoRefreshToken: true,
     detectSessionInUrl: false, // Tauri — no URL-based OAuth redirects
+    // CRITICAL: Use a unique storage key to prevent "Lock not released" errors in React/Tauri
+    storageKey: 'longhaul-fm-auth-v1',
   },
   realtime: {
-    params: { eventsPerSecond: 10 },
+    params: { 
+      eventsPerSecond: 10 
+    },
   },
 })
 

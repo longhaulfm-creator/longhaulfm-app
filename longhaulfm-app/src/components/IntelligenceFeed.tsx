@@ -63,7 +63,7 @@ export function IntelligenceFeed() {
           onClick={() => setView('whatsapp')}
           className={`flex-1 flex items-center justify-center gap-2 font-ui text-[9px] tracking-widest uppercase transition-all ${view === 'whatsapp' ? 'bg-green-500/10 text-green-500 font-bold border-b-2 border-green-500' : 'text-white/20'}`}
         >
-          <MessageSquare size={12} /> INTEL FEED
+          <MessageSquare size={12} /> WHATSAPP FEED
         </button>
       </div>
 

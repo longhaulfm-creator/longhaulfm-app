@@ -1,26 +1,48 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { router } from './router'
-import './i18n/config' // Critical: Initialize your Shona/Afrikaans translations early
+import { useBroadcastStore } from './stores/broadcastStore' 
+import './i18n/config'
 
-// 1. Setup the "Business Brain" cache
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       retry: 1,
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
+      staleTime: 5 * 60 * 1000,
     },
   },
 })
 
 export default function App() {
   const [sdkReady, setSdkReady] = useState(false)
+  const isInitialized = useRef(false); 
+  
+  const fetchInitial = useBroadcastStore(state => state.fetchInitial)
+  const subscribeRealtime = useBroadcastStore(state => state.subscribeRealtime)
 
+  // 1. Initialize Station State & Realtime Subscriptions
   useEffect(() => {
-    // 2. Fast & Rude: Inject Spotify SDK once at the root
-    // This makes 'window.Spotify' available to all routes/components
+    let unsubscribe: (() => void) | undefined;
+
+    if (!isInitialized.current) {
+      console.log("📻 Radio Station Initializing...");
+      fetchInitial();
+      unsubscribe = subscribeRealtime();
+      isInitialized.current = true;
+    }
+
+    return () => {
+      if (unsubscribe) {
+        console.log("🔌 Cleaning up Realtime Subscriptions");
+        unsubscribe();
+      }
+    };
+  }, [fetchInitial, subscribeRealtime]) 
+
+  // 2. Inject Spotify SDK for Master Console
+  useEffect(() => {
     if (!document.getElementById('spotify-sdk')) {
       const script = document.createElement("script");
       script.id = "spotify-sdk";
@@ -29,23 +51,17 @@ export default function App() {
       document.body.appendChild(script);
     }
 
+    // Attach handler to window
     window.onSpotifyWebPlaybackSDKReady = () => {
       setSdkReady(true);
       console.log("🎸 Long Haul FM: Spotify Engine Started");
     };
 
-    // 3. Clean up old listeners if the app hot-reloads
-    return () => {
-      // In a real radio environment, we keep this alive as long as possible
-    };
+    // Note: No specific cleanup needed for the script injection
   }, [])
 
   return (
     <QueryClientProvider client={queryClient}>
-      {/* We use RouterProvider here. 
-          Inside your routes, you'll use the 'useRadioStation' hook 
-          to listen for Ably 'ducking' and 'sync' events.
-      */}
       <RouterProvider router={router} />
     </QueryClientProvider>
   )

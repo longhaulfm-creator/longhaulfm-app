@@ -8,7 +8,6 @@ interface AuthState {
   spotifyToken: string | null
   isLoading: boolean
   signIn: (email: string, pass: string) => Promise<string | null>
-  // NEW: Social login handler
   signInWithSocial: (provider: 'google' | 'facebook') => Promise<string | null>
   signOut: () => Promise<void>
   setSpotifyToken: (token: string) => void
@@ -27,11 +26,12 @@ export const useAuthStore = create<AuthState>()(
         try {
           const { data: { session } } = await supabase.auth.getSession()
           
-          const { data: broadcastData } = await supabase
-            .from('broadcast_state')
-            .select('spotify_token')
-            .eq('id', 1)
-            .single()
+          // 1. Fetch token from the correct dedicated table
+          const { data: authData } = await supabase
+            .from('spotify_auth')
+            .select('access_token')
+            .limit(1)
+            .maybeSingle()
 
           let userProfile = null
           if (session?.user) {
@@ -46,7 +46,7 @@ export const useAuthStore = create<AuthState>()(
           set({ 
             user: session?.user ?? null, 
             profile: userProfile,
-            spotifyToken: broadcastData?.spotify_token || null,
+            spotifyToken: authData?.access_token || null, // Updated mapping
             isLoading: false 
           })
 
@@ -68,7 +68,6 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      // NEW SOCIAL SIGN IN LOGIC
       signInWithSocial: async (provider) => {
         set({ isLoading: true })
         try {
@@ -88,11 +87,12 @@ export const useAuthStore = create<AuthState>()(
 
       setSpotifyToken: async (token: string) => {
         set({ spotifyToken: token })
+        // Update the dedicated auth table instead of broadcast_state
         await supabase
-          .from('broadcast_state')
+          .from('spotify_auth')
           .upsert({ 
             id: 1, 
-            spotify_token: token,
+            access_token: token,
             updated_at: new Date().toISOString()
           })
       },

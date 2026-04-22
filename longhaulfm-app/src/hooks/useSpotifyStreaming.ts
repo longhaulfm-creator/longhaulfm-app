@@ -9,7 +9,6 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
   const playerRef = useRef<any>(null);
 
   useEffect(() => {
-    // Both Admin and DJ need the SDK ready for session transfers
     const masterRoles = ['admin', 'dj'];
     if (!masterRoles.includes(userRole) || !accessToken) return;
 
@@ -22,24 +21,37 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
         volume: 0.5
       });
 
+      // --- EVENT LISTENERS ---
       player.addListener('ready', ({ device_id }: { device_id: string }) => {
         console.log('✅ Signal Connected to Device:', device_id);
         setDeviceId(device_id);
         setIsReady(true);
+        // Expose to window for manual console overrides
+        (window as any).masterPlayer = player;
+      });
+
+      player.addListener('not_ready', ({ device_id }: { device_id: string }) => {
+        console.log('❌ Device ID has gone offline:', device_id);
+        setIsReady(false);
       });
 
       player.addListener('player_state_changed', (state: any) => {
         if (state) {
           setPlaybackState(state);
-          // This updates the store, which pushes metadata to Supabase/Ably
           setNowPlaying(state);
         }
       });
 
-      player.connect();
+      player.addListener('initialization_error', ({ message }: any) => console.error('Init Error:', message));
+      player.addListener('authentication_error', ({ message }: any) => console.error('Auth Error:', message));
+      player.addListener('account_error', ({ message }: any) => console.error('Premium Required:', message));
+
+      // START CONNECTION
+      await player.connect();
       playerRef.current = player;
     };
 
+    // Load SDK if not present
     if (!(window as any).Spotify) {
       const script = document.createElement("script");
       script.src = "https://sdk.scdn.co/spotify-player.js";
@@ -58,10 +70,26 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
     };
   }, [accessToken, userRole, setNowPlaying]);
 
-  const togglePlay = async (play: boolean) => {
-    if (!playerRef.current) return;
-    if (play) await playerRef.current.resume();
-    else await playerRef.current.pause();
+  // --- ACTIONS ---
+  const togglePlay = async (shouldPlay: boolean) => {
+    if (!playerRef.current) {
+      console.warn("⚠️ Player not initialized. Interaction required.");
+      return;
+    }
+
+    try {
+      // Browsers in 2026 require 'activateElement' before 'resume'
+      // This is usually why "Engage Live" does nothing.
+      await playerRef.current.activateElement();
+      
+      if (shouldPlay) {
+        await playerRef.current.resume();
+      } else {
+        await playerRef.current.pause();
+      }
+    } catch (error) {
+      console.error("Playback Action Failed:", error);
+    }
   };
 
   return { 

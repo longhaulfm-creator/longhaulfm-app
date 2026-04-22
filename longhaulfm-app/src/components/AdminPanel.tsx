@@ -1,116 +1,165 @@
-import React, { useState } from 'react';
-import { useBroadcastStore } from '@/stores/broadcastStore';
-import { useSpotifyToken } from '@/hooks/useSpotifyToken';
-import { supabase } from '@/lib/supabase';
-import { Radio, Power, MicOff, RefreshCw, CheckCircle2, Share2 } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useBroadcastStore } from '../stores/broadcastStore';
+import { supabase } from '../lib/supabase';
+import { 
+  ShieldAlert, Power, MicOff, UserX, Radio, RefreshCcw
+} from 'lucide-react';
 
-interface AdminPanelProps {
-  deviceId?: string | null;
-  togglePlay: (play: boolean) => void;
-}
+// The ID from your screenshot
+const MASTER_DJ_ID = '6ba16792-7108-4d64-964c-f1e6005d5e2e';
 
-export const AdminPanel = ({ deviceId, togglePlay }: AdminPanelProps) => {
-  const { micAllowed, systemKill, toggleMic, toggleSystemKill, fetchInitial } = useBroadcastStore();
-  const { token } = useSpotifyToken();
-  const [isTransferring, setIsTransferring] = useState(false);
-  const [isResetting, setIsResetting] = useState(false);
+export const AdminPanel = () => {
+  const { systemKill, toggleMic, toggleSystemKill, fetchInitial } = useBroadcastStore();
+  const [activeMasterId, setActiveMasterId] = useState<string | null>(null);
+  const [isKicking, setIsKicking] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const channelRef = useRef<any>(null);
 
-  const handleHandover = async () => {
-    if (!token || !deviceId) {
-      alert("Spotify Signal not ready on this device.");
-      return;
+  useEffect(() => {
+    const getMaster = async () => {
+      const { data, error } = await supabase
+        .from('spotify_auth')
+        .select('id') 
+        .eq('id', MASTER_DJ_ID)
+        .maybeSingle();
+      
+      if (!error && data) {
+        setActiveMasterId(data.id);
+      }
+    };
+
+    getMaster();
+
+    if (!channelRef.current) {
+      const channelId = `admin-sync-${Math.random().toString(36).substring(7)}`;
+      channelRef.current = supabase.channel(channelId)
+        .on(
+          'postgres_changes',
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'spotify_auth', 
+            filter: `id=eq.${MASTER_DJ_ID}` 
+          },
+          (payload) => {
+            console.log('👑 Master DJ State Updated');
+            setActiveMasterId(payload.new.id);
+          }
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') console.log('✅ Admin Sync Live');
+        });
     }
 
-    if (confirm("🔄 CLAIM MASTER CONSOLE? This will kick the current DJ and route audio to your laptop.")) {
-      setIsTransferring(true);
-      try {
-        // 1. Transfer Spotify Playback to THIS laptop
-        await fetch('https://api.spotify.com/v1/me/player', {
-          method: 'PUT',
-          body: JSON.stringify({ device_ids: [deviceId], play: true }),
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          }
-        });
-
-        // 2. Clear Icecast mount (Requires 'Allow Insecure Content' in Chrome for localhost)
-        try {
-          await fetch('http://34.35.38.193:8000/admin/killsource?mount=/radio.mp3', {
-            mode: 'no-cors',
-            headers: { 'Authorization': 'Basic ' + btoa('admin:your_icecast_pass') }
-          });
-        } catch (iceErr) {
-          console.warn("Icecast kick blocked by browser security. Proceeding with handover.");
-        }
-
-        // 3. Force update Supabase so listeners get metadata immediately
-        await supabase
-          .from('broadcast_state')
-          .update({ 
-            is_playing: true, 
-            system_kill: false,
-            updated_at: new Date().toISOString() 
-          })
-          .eq('id', 1);
-
-        // 4. Trigger local playback
-        setTimeout(() => {
-          togglePlay(true);
-          setIsTransferring(false);
-          fetchInitial();
-        }, 1000);
-
-      } catch (e) {
-        console.error("Handover failed:", e);
-        setIsTransferring(false);
+    return () => {
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
       }
+    };
+  }, []);
+
+  // NEW: Manual Sync to force Edge Function metadata refresh
+  const handleManualSync = async () => {
+    setIsSyncing(true);
+    try {
+      await supabase.functions.invoke('spotify-sync', {
+        body: { action: 'refresh_metadata' }
+      });
+      await fetchInitial();
+    } catch (err) {
+      console.error("Manual sync failed", err);
+    } finally {
+      setIsSyncing(false);
     }
   };
 
-  const handleKillswitch = async () => {
-    if (confirm(systemKill ? "Restore station?" : "🚨 EMERGENCY: Kill all audio?")) {
-      await toggleSystemKill();
-      setTimeout(() => fetchInitial(), 500);
+  const handleForceDisconnect = async () => {
+    if (!confirm("⚠️ FORCE DISCONNECT LIVE SOURCE? \nThis will stop the BUTT/Larix connection.")) return;
+    setIsKicking(true);
+    try {
+      // 1. Kick from AzuraCast
+      const response = await fetch("https://radio.longhaul-fm.co.za/api/station/1/backend/disconnect", {
+        method: 'POST',
+        headers: { 'X-API-Key': import.meta.env.VITE_AZURACAST_API_KEY || '' }
+      });
+      
+      // 2. Reset the DB state so listeners see the Fallback/Auto-DJ info
+      const { error } = await supabase.rpc('reset_broadcast_system');
+      if (error) throw error;
+
+      // 3. Trigger a sync to clean up metadata
+      await supabase.functions.invoke('spotify-sync', { body: { action: 'disengage' } });
+
+      await fetchInitial();
+      alert("✅ Operator Ejected and System Reset.");
+    } catch (err: any) {
+      alert(`❌ Error: ${err.message}`);
+    } finally {
+      setIsKicking(false);
     }
   };
 
   return (
-    <div className="bg-zinc-900/95 border border-red-500/30 p-4 rounded shadow-2xl backdrop-blur-xl">
-      <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2">
-        <Radio size={14} className={systemKill ? "text-red-500 animate-pulse" : "text-green-500"} />
-        <h2 className="text-[10px] font-bold uppercase text-white tracking-widest">Station Authority</h2>
+    <div className="bg-zinc-900/95 border border-white/10 p-4 rounded shadow-2xl backdrop-blur-xl">
+      <div className="flex items-center justify-between mb-4 border-b border-white/5 pb-2">
+        <div className="flex items-center gap-2">
+          <ShieldAlert size={14} className="text-zinc-500" />
+          <h2 className="text-[10px] font-bold uppercase text-zinc-400 tracking-widest">Global Policy</h2>
+        </div>
+        
+        <div className="flex items-center gap-2">
+          <button 
+            onClick={handleManualSync}
+            disabled={isSyncing}
+            className="p-1 hover:bg-white/5 rounded transition-colors text-zinc-500 hover:text-gold"
+            title="Force Metadata Sync"
+          >
+            <RefreshCcw size={12} className={isSyncing ? "animate-spin" : ""} />
+          </button>
+          <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-500/10 border border-blue-500/20">
+            <Radio size={10} className={activeMasterId ? "text-blue-400 animate-pulse" : "text-zinc-600"} />
+            <span className="text-[8px] text-blue-300 font-mono uppercase font-bold">
+              {activeMasterId ? 'STATION MASTER' : 'AUTO-DJ'}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 gap-2">
         <button 
-          onClick={handleHandover}
-          disabled={isTransferring}
-          className="col-span-2 mb-2 p-3 bg-blue-600/20 border border-blue-500/40 rounded flex items-center justify-center gap-2 hover:bg-blue-600/40 transition-all disabled:opacity-50"
+          onClick={handleForceDisconnect}
+          disabled={isKicking}
+          className="col-span-2 mb-2 p-3 border border-red-500/40 bg-red-950/20 rounded-lg flex items-center justify-center gap-2 hover:bg-red-500/30 transition-all disabled:opacity-50"
         >
-          <Share2 size={14} className={isTransferring ? "animate-spin" : ""} />
-          <span className="text-[9px] font-black uppercase tracking-[0.2em]">
-            {isTransferring ? 'Claiming Signal...' : 'Claim Master Console'}
-          </span>
+          <UserX size={16} className={isKicking ? "animate-spin" : "text-red-500"} />
+          <span className="text-[9px] font-black uppercase text-red-200">Force Disconnect</span>
         </button>
 
-        <button onClick={handleKillswitch} className={`p-3 rounded flex flex-col items-center gap-1 border transition-all ${systemKill ? 'bg-red-600' : 'bg-zinc-800 border-white/5'}`}>
-          <Power size={16} />
-          <span className="text-[8px] font-bold uppercase tracking-tighter">{systemKill ? 'RESTORE' : 'SYSTEM KILL'}</span>
+        <button 
+          onClick={() => toggleSystemKill()} 
+          className={`p-3 rounded border transition-all ${systemKill ? 'bg-red-600 border-white' : 'bg-zinc-800 border-white/5 hover:bg-zinc-700'}`}
+        >
+          <Power size={16} color="white" className="mx-auto" />
+          <span className="text-[8px] font-bold uppercase text-white block mt-1">System Kill</span>
         </button>
         
-        <button onClick={() => toggleMic()} className={`p-3 rounded flex flex-col items-center gap-1 border transition-all ${!micAllowed ? 'bg-amber-600' : 'bg-zinc-800 border-white/5'}`}>
-          <MicOff size={16} />
-          <span className="text-[8px] font-bold uppercase tracking-tighter">{!micAllowed ? 'RELEASE' : 'MUZZLE'}</span>
+        <button 
+          onClick={() => toggleMic()} 
+          className="p-3 rounded border bg-zinc-800 border-white/5 hover:bg-zinc-700 transition-all"
+        >
+          <MicOff size={16} color="white" className="mx-auto" />
+          <span className="text-[8px] font-bold uppercase text-white block mt-1">Muzzle Mics</span>
         </button>
       </div>
       
-      <button 
-        onClick={async () => { setIsResetting(true); await supabase.rpc('reset_broadcast_system'); await fetchInitial(); setIsResetting(false); }} 
-        className="w-full mt-4 flex items-center justify-center gap-2 py-2 text-[8px] font-bold uppercase border border-white/10 rounded text-white/60 hover:text-white transition-colors"
-      >
-        <RefreshCw size={10} className={isResetting ? "animate-spin" : ""} /> Full Logic Reset
-      </button>
+      {systemKill && (
+        <div className="mt-4 p-2 bg-red-500/10 border border-red-500/20 rounded">
+          <p className="text-[8px] text-red-400 text-center leading-tight uppercase font-bold">
+            Emergency Override Active: All broadcast streams are currently suppressed at the Edge.
+          </p>
+        </div>
+      )}
     </div>
   );
 };

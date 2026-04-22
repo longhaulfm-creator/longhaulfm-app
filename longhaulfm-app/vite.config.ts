@@ -16,13 +16,12 @@ export default defineConfig(({ command }) => ({
   server: {
     port: 1420,
     strictPort: true,
-    // We force 0.0.0.0 so it listens on your local IP (192.168.8.2)
     host: '0.0.0.0', 
     https: true, 
     hmr: {
       protocol: 'wss',
-      // This MUST be your local IP so the tablet knows where to send updates
-      host: '192.168.8.2', 
+      // Forced to localhost for browser security compliance in Incognito
+      host: 'localhost', 
       port: 1420,
     },
     watch: {

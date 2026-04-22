@@ -1,75 +1,87 @@
 import { useEffect, useState, useRef } from 'react';
 import { ably } from '../lib/ably';
 
-export interface TrackSyncEvent {
-  trackId: string;
-  positionMs: number;
-  timestamp: number;
-}
-
 export const useRadioStation = () => {
   const [isDucked, setIsDucked] = useState(false);
-  const [latestTrackSync, setLatestTrackSync] = useState<TrackSyncEvent | null>(null);
-  
-  // Audio reference for the Johannesburg Icecast stream
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const SECURE_STREAM_URL = "https://radio.longhaul-fm.co.za/radio/8000/radio.mp3";
 
-  // 1. Initialize Audio Hardware
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const playPromiseRef = useRef<Promise<void> | null>(null);
+
   useEffect(() => {
-    // Pointing to your verified AzuraCast mount
-    audioRef.current = new Audio("http://34.35.38.193:8000/radio.mp3");
-    audioRef.current.preload = "none"; 
+    const audio = new Audio();
+    audio.crossOrigin = "anonymous";
+    audio.preload = "none";
+    audioRef.current = audio;
     
     return () => {
-      audioRef.current?.pause();
-      audioRef.current = null;
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current.src = "";
+      }
     };
   }, []);
 
-  // 2. Network Sync (Ably)
+  // 🎚️ LISTENER DUCKING: Drop music to 15% so the voice cuts through completely
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.volume = isDucked ? 0.15 : 1.0;
+    }
+  }, [isDucked]);
+
   useEffect(() => {
     const channel = ably.channels.get('longhaul-live-sync');
-
-    const duckingSub = (message: any) => {
-      console.log("📻 Signal Sync: Ducking status set to", message.data.ducked);
-      setIsDucked(message.data.ducked);
+    const duckingSub = (msg: any) => {
+      setTimeout(() => setIsDucked(msg.data.ducked), 2200);
     };
-
-    const trackSub = (message: any) => {
-      setLatestTrackSync(message.data as TrackSyncEvent);
-    };
-
     channel.subscribe('ducking', duckingSub);
-    channel.subscribe('track-sync', trackSub);
-
-    return () => { 
-      channel.unsubscribe('ducking', duckingSub);
-      channel.unsubscribe('track-sync', trackSub);
-    };
+    return () => { channel.unsubscribe('ducking', duckingSub); };
   }, []);
 
-  // 3. Hardware Control
-  const toggleStream = (play: boolean) => {
-    if (!audioRef.current) return;
-    
+  const toggleStream = async (play: boolean) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
     if (play) {
-      // Re-setting the SRC flushes any old buffer to reduce lag
-      audioRef.current.src = "http://34.35.38.193:8000/radio.mp3";
-      audioRef.current.play().catch(err => console.error("Broadcast Stream Error:", err));
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: false } 
+        });
+        micStreamRef.current = stream;
+        
+        audio.src = `${SECURE_STREAM_URL}?t=${Date.now()}`;
+        audio.muted = false; // Ensure the HTML element is active
+        playPromiseRef.current = audio.play();
+
+        const jumpToLive = () => {
+          if (audio.buffered.length > 0) {
+            audio.currentTime = audio.buffered.end(audio.buffered.length - 1);
+            audio.removeEventListener('canplay', jumpToLive);
+          }
+        };
+        audio.addEventListener('canplay', jumpToLive);
+
+      } catch (err) {
+        console.error("❌ Hardware Error:", err);
+      }
     } else {
-      audioRef.current.pause();
-      audioRef.current.src = ""; // Hard stop the data connection
+      // 🛑 NUKE PROTOCOL: Total Software and Hardware Annihilation
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(track => {
+          track.enabled = false; // Step 1: Force OS to mute the channel
+          track.stop();          // Step 2: Sever power to the hardware sensor
+        });
+        micStreamRef.current = null; // Step 3: Destroy the memory reference
+      }
+      
+      audio.pause();
+      audio.muted = true; // Step 4: Mute the HTML element to kill any phantom bleed
+      audio.src = ""; 
+      audio.load(); 
+      playPromiseRef.current = null;
     }
   };
 
-  const broadcastTrack = (trackUri: string, positionMs: number) => {
-    const channel = ably.channels.get('longhaul-live-sync');
-    channel.publish('track-sync', {
-      trackId: trackUri,
-      positionMs: positionMs,
-      timestamp: Date.now()
-    });
-  };
-
-  return { isDucked, latestTrackSync, broadcastTrack, toggleStream };
+  return { isDucked, toggleStream };
 };
