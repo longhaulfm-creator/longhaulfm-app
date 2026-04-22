@@ -4,99 +4,103 @@ import { useRadioStation } from '@/hooks/useRadioStation'
 import { useSpotifyToken } from '@/hooks/useSpotifyToken'
 import { supabase } from '@/lib/supabase'
 import { ably } from '@/lib/ably'
-import { Mic, Radio, LogOut } from 'lucide-react'
+import { Mic } from 'lucide-react'
 
 interface Props { player: any; userRole: string; deviceId?: string | null }
 
 export const BroadcastControls: React.FC<Props> = ({ player, userRole, deviceId }) => {
   const isPlaying = useBroadcastStore((s) => s.isPlaying)
-  const { toggleStream } = useRadioStation(); 
-  const { takeControlAsDJ, releaseControlToAutoDJ, token } = useSpotifyToken();
+  const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying) // Ensure this exists in your store
+  const { toggleMicHardware } = useRadioStation(); 
+  const { takeControlAsDJ, token } = useSpotifyToken();
 
   const [hasAuthority, setHasAuthority] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
-  const pressStartTime = useRef<number>(0)
   const [isSpaceDown, setIsSpaceDown] = useState(false)
 
   const updateBroadcast = useCallback(async (active: boolean) => {
-    if (!player || !hasAuthority) return;
+    console.log("📡 UpdateBroadcast sequence started. Active:", active);
+    
+    // 1. MIC ALWAYS TOGGLES (Even if Spotify is broken)
+    await toggleMicHardware(active);
 
-    await toggleStream(active);
-
-    try {
-      // 🎚️ DJ DUCKING: Drop local music to 10% to prevent headphone bleed into the mic
-      await player.setVolume(active ? 0.1 : 1.0); 
-    } catch (err) {
-      console.warn("Spotify Vol Sync Error", err);
+    // 2. SPOTIFY DUCKING (Only if player exists)
+    if (player) {
+      try {
+        await player.setVolume(active ? 0.15 : 1.0);
+        console.log("🎵 Spotify Volume Set to:", active ? 0.15 : 1.0);
+      } catch (err) {
+        console.warn("⚠️ Spotify Player exists but failed to set volume.");
+      }
+    } else {
+      console.warn("⚠️ No Spotify Player detected. Ducking skipped.");
     }
 
+    // 3. GLOBAL SIGNALS
     const channel = ably.channels.get('longhaul-live-sync')
-    await channel.publish('ducking', { ducked: active })
+    channel.publish('ducking', { ducked: active })
     
     await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1)
-  }, [player, hasAuthority, toggleStream])
+    
+    // Update local Zustand store so the UI button turns Red
+    setIsPlaying(active); 
+
+  }, [player, toggleMicHardware, setIsPlaying])
 
   const handleEngage = () => {
-    if (!hasAuthority || isPlaying) return
-    pressStartTime.current = Date.now()
-    updateBroadcast(true)
+    if (!hasAuthority) {
+      console.log("🚫 Cannot talk: Console not claimed.");
+      return;
+    }
+    updateBroadcast(true);
   }
 
   const handleRelease = () => {
-    if (pressStartTime.current === 0) return
+    if (!hasAuthority) return;
     updateBroadcast(false);
-    pressStartTime.current = 0;
   }
 
   const handleTakeover = async () => {
     setIsTransferring(true);
+    console.log("🔌 Attempting to claim DJ console...");
     try {
-      if (deviceId && token) {
-        await fetch(`https://api.spotify.com/v1/me/player`, {
-          method: 'PUT',
-          body: JSON.stringify({ device_ids: [deviceId], play: true }),
-          headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' }
-        });
+      // If you have the token, we force the DJ state
+      if (token) {
+        await takeControlAsDJ({ access_token: token });
+        setHasAuthority(true);
+        console.log("✅ Console Claimed!");
       }
-      await takeControlAsDJ({ access_token: token || '' });
-      setHasAuthority(true);
     } catch (err) {
-      console.error("Takeover failed", err);
+      console.error("❌ Takeover failed:", err);
     } finally {
       setIsTransferring(false);
     }
   };
 
-  const handleReleaseControl = async () => {
-    await releaseControlToAutoDJ();
-    setHasAuthority(false);
-    if (isPlaying) updateBroadcast(false);
-  };
-
+  // Keyboard Listeners
   useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
+    const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isSpaceDown && hasAuthority) {
-        if (!(['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || ''))) {
-          e.preventDefault();
-          setIsSpaceDown(true);
-          handleEngage();
-        }
+        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
+        e.preventDefault();
+        setIsSpaceDown(true);
+        handleEngage();
       }
     }
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && hasAuthority) {
         e.preventDefault();
         setIsSpaceDown(false);
         handleRelease();
       }
     }
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
     return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
     }
-  }, [isSpaceDown, hasAuthority, isPlaying])
+  }, [isSpaceDown, hasAuthority])
 
   return (
     <div className="flex flex-col gap-2 w-full select-none">
@@ -104,25 +108,26 @@ export const BroadcastControls: React.FC<Props> = ({ player, userRole, deviceId 
         <button 
           onMouseDown={handleEngage} 
           onMouseUp={handleRelease}
-          onMouseLeave={() => isPlaying && handleRelease()}
-          disabled={!hasAuthority}
+          // The button should look enabled if you have authority
           className={`flex-1 transition-all rounded border flex items-center justify-center gap-3 px-4
-            ${!hasAuthority ? 'bg-zinc-900 opacity-40' : isPlaying ? 'bg-red-600 shadow-[0_0_20px_rgba(255,0,0,0.4)] border-white' : 'bg-black/60 border-white/20'}`}
+            ${!hasAuthority ? 'bg-zinc-900 opacity-40 cursor-not-allowed' : 
+              isPlaying ? 'bg-red-600 border-white shadow-[0_0_20px_rgba(255,0,0,0.5)]' : 
+              'bg-black/60 border-white/20 hover:border-white/40'}`}
         >
-          <Mic size={20} className={isPlaying ? "text-white animate-pulse" : "text-amber-500"} />
+          <Mic size={20} className={isPlaying ? "text-white" : "text-amber-500"} />
           <span className="font-header text-xs tracking-widest uppercase font-bold text-white">
-            {isPlaying ? 'ON AIR' : 'HOLD SPACE TO TALK'}
+            {!hasAuthority ? 'CLAIM CONSOLE TO TALK' : isPlaying ? 'ON AIR' : 'HOLD SPACE TO TALK'}
           </span>
         </button>
       </div>
 
       <div className="flex gap-2 h-10">
         {!hasAuthority ? (
-          <button onClick={handleTakeover} disabled={isTransferring} className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200">
-            {isTransferring ? 'Claiming...' : 'Claim Console'}
+          <button onClick={handleTakeover} disabled={isTransferring} className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200 hover:bg-indigo-600/40">
+            {isTransferring ? 'Initialising...' : 'Claim DJ Console'}
           </button>
         ) : (
-          <button onClick={handleReleaseControl} className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400">
+          <button onClick={() => setHasAuthority(false)} className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400">
             Release Console
           </button>
         )}
