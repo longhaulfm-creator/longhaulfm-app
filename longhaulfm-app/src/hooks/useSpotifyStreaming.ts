@@ -10,6 +10,7 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
 
   useEffect(() => {
     const masterRoles = ['admin', 'dj'];
+    // Ensure we have a valid token before attempting setup
     if (!masterRoles.includes(userRole) || !accessToken) return;
 
     const setupPlayer = async () => {
@@ -26,7 +27,6 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
         console.log('✅ Signal Connected to Device:', device_id);
         setDeviceId(device_id);
         setIsReady(true);
-        // Expose to window for manual console overrides
         (window as any).masterPlayer = player;
       });
 
@@ -51,7 +51,6 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
       playerRef.current = player;
     };
 
-    // Load SDK if not present
     if (!(window as any).Spotify) {
       const script = document.createElement("script");
       script.src = "https://sdk.scdn.co/spotify-player.js";
@@ -70,18 +69,14 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
     };
   }, [accessToken, userRole, setNowPlaying]);
 
-  // --- ACTIONS ---
   const togglePlay = async (shouldPlay: boolean) => {
     if (!playerRef.current) {
-      console.warn("⚠️ Player not initialized. Interaction required.");
+      console.warn("⚠️ Player not initialized.");
       return;
     }
 
     try {
-      // Browsers in 2026 require 'activateElement' before 'resume'
-      // This is usually why "Engage Live" does nothing.
       await playerRef.current.activateElement();
-      
       if (shouldPlay) {
         await playerRef.current.resume();
       } else {

@@ -7,6 +7,7 @@ interface AuthState {
   profile: any | null
   spotifyToken: string | null
   isLoading: boolean
+  signUp: (email: string, pass: string) => Promise<string | null>
   signIn: (email: string, pass: string) => Promise<string | null>
   signInWithSocial: (provider: 'google' | 'facebook') => Promise<string | null>
   signOut: () => Promise<void>
@@ -16,7 +17,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       user: null,
       profile: null,
       spotifyToken: null,
@@ -24,17 +25,23 @@ export const useAuthStore = create<AuthState>()(
 
       initialize: async () => {
         try {
+          // 1. Get current session
           const { data: { session } } = await supabase.auth.getSession()
           
-          // 1. Fetch token from the correct dedicated table
-          const { data: authData } = await supabase
-            .from('spotify_auth')
-            .select('access_token')
-            .limit(1)
-            .maybeSingle()
-
+          let spotifyToken = null
           let userProfile = null
-          if (session?.user) {
+
+          // 2. Only fetch the token if a session exists to prevent 400 errors for guests
+          if (session) {
+            const { data: authData } = await supabase
+              .from('spotify_auth')
+              .select('get_spotify_token_99')
+              .limit(1)
+              .maybeSingle()
+
+            spotifyToken = authData?.get_spotify_token_99 || null
+
+            // 3. Fetch the user profile
             const { data: profile } = await supabase
               .from('profiles')
               .select('*')
@@ -46,25 +53,93 @@ export const useAuthStore = create<AuthState>()(
           set({ 
             user: session?.user ?? null, 
             profile: userProfile,
-            spotifyToken: authData?.access_token || null, // Updated mapping
+            spotifyToken: spotifyToken,
             isLoading: false 
           })
 
-          supabase.auth.onAuthStateChange(async (_event, session) => {
+          // 4. Listen for auth changes
+          supabase.auth.onAuthStateChange(async (event, session) => {
             if (session) {
               const { data: profile } = await supabase
                 .from('profiles')
                 .select('*')
                 .eq('id', session.user.id)
                 .single()
-              set({ user: session.user, profile })
+              
+              // Only re-fetch token if we don't have it yet
+              if (!get().spotifyToken) {
+                const { data: authData } = await supabase
+                  .from('spotify_auth')
+                  .select('get_spotify_token_99')
+                  .limit(1)
+                  .maybeSingle()
+                
+                set({ user: session.user, profile, spotifyToken: authData?.get_spotify_token_99 })
+              } else {
+                set({ user: session.user, profile })
+              }
             } else {
-              set({ user: null, profile: null })
+              set({ user: null, profile: null, spotifyToken: null })
             }
           })
         } catch (error) {
           console.error("Auth initialization failed:", error)
           set({ isLoading: false })
+        }
+      },
+
+      signUp: async (email, password) => {
+        set({ isLoading: true })
+        try {
+          const { data, error } = await supabase.auth.signUp({ 
+            email, 
+            password,
+            options: {
+              // Ensure the metadata is passed if needed for triggers
+              data: {
+                email: email
+              }
+            }
+          })
+          if (error) throw error
+          
+          set({ isLoading: false })
+          return null
+        } catch (err: any) {
+          set({ isLoading: false })
+          return err.message
+        }
+      },
+
+      signIn: async (email, password) => {
+        set({ isLoading: true })
+        try {
+          const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+          if (error) throw error
+
+          const { data: profile } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single()
+
+          // Also grab the token on sign in
+          const { data: authData } = await supabase
+            .from('spotify_auth')
+            .select('get_spotify_token_99')
+            .limit(1)
+            .maybeSingle()
+
+          set({ 
+            user: data.user, 
+            profile, 
+            spotifyToken: authData?.get_spotify_token_99 || null,
+            isLoading: false 
+          })
+          return null
+        } catch (err: any) {
+          set({ isLoading: false })
+          return err.message
         }
       },
 
@@ -87,39 +162,18 @@ export const useAuthStore = create<AuthState>()(
 
       setSpotifyToken: async (token: string) => {
         set({ spotifyToken: token })
-        // Update the dedicated auth table instead of broadcast_state
         await supabase
           .from('spotify_auth')
           .upsert({ 
             id: 1, 
-            access_token: token,
+            get_spotify_token_99: token,
             updated_at: new Date().toISOString()
           })
       },
 
-      signIn: async (email, password) => {
-        set({ isLoading: true })
-        try {
-          const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-          if (error) throw error
-
-          const { data: profile } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', data.user.id)
-            .single()
-
-          set({ user: data.user, profile, isLoading: false })
-          return null
-        } catch (err: any) {
-          set({ isLoading: false })
-          return err.message
-        }
-      },
-
       signOut: async () => {
         await supabase.auth.signOut()
-        set({ user: null, profile: null })
+        set({ user: null, profile: null, spotifyToken: null })
       },
     }),
     {

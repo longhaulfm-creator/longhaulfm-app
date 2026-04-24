@@ -14,7 +14,6 @@ export const useSpotifyToken = () => {
 
   const triggerRefresh = useCallback(async () => {
     const { data: { session } } = await supabase.auth.getSession();
-    // ONLY Admins/DJs can trigger the Edge Function
     if (!session || isRefreshing.current) return;
 
     isRefreshing.current = true;
@@ -26,9 +25,9 @@ export const useSpotifyToken = () => {
       });
       if (refreshError) throw refreshError;
       
-      // If the function returns a new token, set it immediately
-      if (data?.access_token) {
-        setToken(data.access_token);
+      // Edge Function returns get_spotify_token_99 now
+      if (data?.get_spotify_token_99) {
+        setToken(data.get_spotify_token_99);
       }
       return data;
     } catch (err: any) {
@@ -43,7 +42,7 @@ export const useSpotifyToken = () => {
     try {
       const { data, error: fetchError } = await supabase
         .from('spotify_auth')
-        .select('access_token, expires_at')
+        .select('get_spotify_token_99, expires_at')
         .eq('id', MASTER_DJ_TOKEN_ID)
         .maybeSingle();
 
@@ -55,14 +54,12 @@ export const useSpotifyToken = () => {
         const now = new Date();
         const expiry = new Date(data.expires_at);
         
-        // If expired and we are the Admin, fix it.
         if (now >= new Date(expiry.getTime() - 300000) && session) {
           await triggerRefresh();
         } else {
-          setToken(data.access_token);
+          setToken(data.get_spotify_token_99);
         }
       } else if (session) {
-        // No row found at all? If admin, try to bootstrap it
         await triggerRefresh();
       }
     } catch (err: any) {
@@ -73,38 +70,66 @@ export const useSpotifyToken = () => {
   }, [triggerRefresh]);
 
   useEffect(() => {
-    fetchCurrentMasterToken();
+    let mounted = true;
+    const channelName = `token_sync_${MASTER_DJ_TOKEN_ID}`;
 
-    if (!channelRef.current) {
-      channelRef.current = supabase
-        .channel(`token_sync_${MASTER_DJ_TOKEN_ID}`)
-        .on(
-          'postgres_changes',
-          { 
-            event: 'UPDATE', 
-            schema: 'public', 
-            table: 'spotify_auth',
-            filter: `id=eq.${MASTER_DJ_TOKEN_ID}` 
-          },
-          (payload) => {
-            console.log('✅ Realtime Token Update Received');
-            setToken(payload.new.access_token);
+    const setupSync = async () => {
+      await fetchCurrentMasterToken();
+      if (!mounted) return;
+
+      // 1. Remove existing channel with the same name to prevent the 'after subscribe' crash
+      // This is the critical fix for React Strict Mode
+      const existingChannel = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`);
+      if (existingChannel) {
+        await supabase.removeChannel(existingChannel);
+      }
+
+      // 2. Setup new channel
+      const channel = supabase.channel(channelName);
+      
+      channel.on(
+        'postgres_changes',
+        { 
+          event: 'UPDATE', 
+          schema: 'public', 
+          table: 'spotify_auth',
+          filter: `id=eq.${MASTER_DJ_TOKEN_ID}` 
+        },
+        (payload) => {
+          console.log('✅ Realtime Token Update Received');
+          if (payload.new?.get_spotify_token_99) {
+            setToken(payload.new.get_spotify_token_99);
           }
-        )
-        .subscribe();
-    }
+        }
+      );
+
+      // 3. Subscribe LAST
+      channel.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('📡 Token Sync Active');
+        }
+      });
+
+      channelRef.current = channel;
+    };
+
+    setupSync();
 
     return () => {
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
+      mounted = false;
+      if (channelRef.current) {
+        supabase.removeChannel(channelRef.current);
+        channelRef.current = null;
+      }
     };
   }, [fetchCurrentMasterToken]); 
 
-  const takeControlAsDJ = async (newAuth: Partial<SpotifyAuth>) => {
+  const takeControlAsDJ = async (newAuth: any) => {
     try {
       const { error } = await supabase
         .from('spotify_auth')
         .update({
-          access_token: newAuth.access_token,
+          get_spotify_token_99: newAuth.get_spotify_token_99,
           refresh_token: newAuth.refresh_token,
           expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
           updated_at: new Date().toISOString()
@@ -112,7 +137,7 @@ export const useSpotifyToken = () => {
         .eq('id', MASTER_DJ_TOKEN_ID);
 
       if (error) throw error;
-      if (newAuth.access_token) setToken(newAuth.access_token);
+      if (newAuth.get_spotify_token_99) setToken(newAuth.get_spotify_token_99);
     } catch (err: any) {
       setError(err.message);
     }
