@@ -28,4 +28,5 @@ base64 = "0.22"
 # THE FIX: Use rustls instead of native-tls (OpenSSL)
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 tauri-plugin-os = "2"
+tauri-plugin-notification = "2"
 

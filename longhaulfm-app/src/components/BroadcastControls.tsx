@@ -7,28 +7,37 @@ import { supabase } from '@/lib/supabase'
 import { ably } from '@/lib/ably'
 import { Mic, ShieldAlert } from 'lucide-react'
 
-interface Props { player: any; userRole: string; deviceId?: string | null }
+interface Props { 
+  player: any; 
+  userRole?: string; 
+  deviceId?: string | null 
+}
 
-export const BroadcastControls: React.FC<Props> = ({ player, deviceId }) => {
-  const isPlaying = useBroadcastStore((s) => s.isPlaying)
-  const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying)
-  const { profile } = useAuthStore() 
+export const BroadcastControls: React.FC<Props> = ({ player }) => {
+  // Pull state and setter directly from store
+  const isPlaying = useBroadcastStore((s) => s.isPlaying);
+  const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying);
+  
+  const { profile } = useAuthStore();
   const { toggleMicHardware } = useRadioStation(); 
   const { takeControlAsDJ, token } = useSpotifyToken();
 
   const [hasAuthority, setHasAuthority] = useState(false);
   const [isTransferring, setIsTransferring] = useState(false);
-  const [isSpaceDown, setIsSpaceDown] = useState(false)
+  const [isSpaceDown, setIsSpaceDown] = useState(false);
 
   const canBroadcast = profile?.role === 'admin' || profile?.role === 'dj';
 
-  // --- NEW: KICK LISTENER ---
+  // Monitor Authority
   useEffect(() => {
     if (!hasAuthority) return;
 
-    // Listen for the Admin clearing the master token
     const channel = supabase.channel('authority_monitor')
-      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'spotify_auth' }, () => {
+      .on('postgres_changes', { 
+        event: 'DELETE', 
+        schema: 'public', 
+        table: 'spotify_auth' 
+      }, () => {
         console.warn("🚨 AUTHORITY REVOKED BY ADMIN");
         setHasAuthority(false);
         setIsPlaying(false);
@@ -38,19 +47,41 @@ export const BroadcastControls: React.FC<Props> = ({ player, deviceId }) => {
 
     return () => { supabase.removeChannel(channel); };
   }, [hasAuthority, setIsPlaying, toggleMicHardware]);
-  // ---------------------------
 
   const updateBroadcast = useCallback(async (active: boolean) => {
-    await toggleMicHardware(active);
-    if (player) {
-      try { await player.setVolume(active ? 0.15 : 1.0); } catch (err) { console.warn("Spotify Volume Error"); }
+    try {
+      // 1. Hardware First
+      await toggleMicHardware(active);
+
+      // 2. Spotify Ducking
+      if (player && typeof player.setVolume === 'function') {
+        try { 
+          await player.setVolume(active ? 0.15 : 1.0); 
+        } catch (err) { 
+          console.warn("Spotify Volume Error", err); 
+        }
+      }
+
+      // 3. Global Sync (Ably)
+      const channel = ably.channels.get('longhaul-live-sync');
+      channel.publish('ducking', { ducked: active });
+      
+      // 4. Persistence (Supabase)
+      await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1);
+
+      // 5. Local UI Update
+      if (typeof setIsPlaying === 'function') {
+        setIsPlaying(active);
+      } else {
+        console.error("setIsPlaying is not available in the store");
+      }
+      
+    } catch (err) {
+      console.error("Broadcast update failed:", err);
+      // Fail-safe: ensure UI doesn't think it's playing if hardware failed
+      setIsPlaying(false);
     }
-    const channel = ably.channels.get('longhaul-live-sync')
-    channel.publish('ducking', { ducked: active })
-    
-    await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1)
-    setIsPlaying(active); 
-  }, [player, toggleMicHardware, setIsPlaying])
+  }, [player, toggleMicHardware, setIsPlaying]);
 
   const handleEngage = () => { if (hasAuthority && canBroadcast) updateBroadcast(true); }
   const handleRelease = () => { if (hasAuthority) updateBroadcast(false); }
@@ -88,10 +119,20 @@ export const BroadcastControls: React.FC<Props> = ({ player, deviceId }) => {
     }
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
-    return () => { window.removeEventListener('keydown', onKeyDown); window.removeEventListener('keyup', onKeyUp); }
-  }, [isSpaceDown, hasAuthority])
+    return () => { 
+      window.removeEventListener('keydown', onKeyDown); 
+      window.removeEventListener('keyup', onKeyUp); 
+    }
+  }, [isSpaceDown, hasAuthority, handleEngage, handleRelease]);
 
-  if (!canBroadcast) return <div className="p-4 border border-white/5 bg-black/20 rounded flex items-center gap-3 opacity-50"><ShieldAlert size={16} /><span className="text-[10px] uppercase tracking-widest">Console Locked</span></div>;
+  if (!canBroadcast) {
+    return (
+      <div className="p-4 border border-white/5 bg-black/20 rounded flex items-center gap-3 opacity-50">
+        <ShieldAlert size={16} />
+        <span className="text-[10px] uppercase tracking-widest">Console Locked</span>
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col gap-2 w-full select-none">
@@ -99,6 +140,7 @@ export const BroadcastControls: React.FC<Props> = ({ player, deviceId }) => {
         <button 
           onMouseDown={handleEngage} 
           onMouseUp={handleRelease}
+          disabled={!hasAuthority}
           className={`flex-1 transition-all rounded border flex items-center justify-center gap-3 px-4
             ${!hasAuthority ? 'bg-zinc-900 opacity-40 cursor-not-allowed' : 
               isPlaying ? 'bg-red-600 border-white shadow-[0_0_20px_rgba(255,0,0,0.5)]' : 
@@ -113,11 +155,18 @@ export const BroadcastControls: React.FC<Props> = ({ player, deviceId }) => {
 
       <div className="flex gap-2 h-10">
         {!hasAuthority ? (
-          <button onClick={handleTakeover} disabled={isTransferring} className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200 hover:bg-indigo-600/40">
+          <button 
+            onClick={handleTakeover} 
+            disabled={isTransferring} 
+            className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200 hover:bg-indigo-600/40"
+          >
             {isTransferring ? 'Initialising...' : 'Claim DJ Console'}
           </button>
         ) : (
-          <button onClick={() => setHasAuthority(false)} className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400">
+          <button 
+            onClick={() => setHasAuthority(false)} 
+            className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400"
+          >
             Release Console
           </button>
         )}
