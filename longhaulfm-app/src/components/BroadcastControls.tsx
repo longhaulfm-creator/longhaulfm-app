@@ -14,6 +14,7 @@ interface Props {
 }
 
 export const BroadcastControls: React.FC<Props> = ({ player }) => {
+  // Use stable selectors for store values
   const isPlaying = useBroadcastStore((s) => s.isPlaying);
   const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying);
   
@@ -29,10 +30,10 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
 
   const updateBroadcast = useCallback(async (active: boolean) => {
     try {
-      // 1. Immediate Hardware Toggle
+      // 1. Hardware Toggle
       await toggleMicHardware(active);
 
-      // 2. Optimized Ducking (40% floor for clearer background music)
+      // 2. Spotify Ducking
       if (player && typeof player.setVolume === 'function') {
         try { 
           await player.setVolume(active ? 0.4 : 1.0); 
@@ -48,12 +49,19 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
       // 4. Persistence
       await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1);
 
-      // 5. Update Local UI State
-      setIsPlaying(active);
+      // 5. UI Update with strict type check
+      if (typeof setIsPlaying === 'function') {
+        setIsPlaying(active);
+      } else {
+        console.warn("⚠️ setIsPlaying found to be non-function, checking store...");
+        // Fallback: update via store directly if selector fails
+        useBroadcastStore.getState().setIsPlaying(active);
+      }
       
     } catch (err) {
       console.error("Broadcast update failed:", err);
-      setIsPlaying(false);
+      // Attempt to reset state on failure
+      if (typeof setIsPlaying === 'function') setIsPlaying(false);
     }
   }, [player, toggleMicHardware, setIsPlaying, profile?.id]);
 
@@ -97,7 +105,6 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
       }
     }
 
-    // Prevents "Sticky Mic" if Trust Alt-Tabs or focuses another window
     const onBlur = () => {
       if (isSpaceDown) {
         setIsSpaceDown(false);
@@ -116,14 +123,7 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
     }
   }, [isSpaceDown, hasAuthority, handleEngage, handleRelease]);
 
-  if (!canBroadcast) {
-    return (
-      <div className="p-4 border border-white/5 bg-black/20 rounded flex items-center gap-3 opacity-50">
-        <ShieldAlert size={16} />
-        <span className="text-[10px] uppercase tracking-widest">Console Locked</span>
-      </div>
-    );
-  }
+  if (!canBroadcast) return null; // Or your locked UI
 
   return (
     <div className="flex flex-col gap-2 w-full select-none">
@@ -146,18 +146,11 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
 
       <div className="flex gap-2 h-10">
         {!hasAuthority ? (
-          <button 
-            onClick={handleTakeover} 
-            disabled={isTransferring} 
-            className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200 hover:bg-indigo-600/40"
-          >
+          <button onClick={handleTakeover} disabled={isTransferring} className="flex-1 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200">
             {isTransferring ? 'Initialising...' : 'Claim DJ Console'}
           </button>
         ) : (
-          <button 
-            onClick={() => setHasAuthority(false)} 
-            className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400"
-          >
+          <button onClick={() => setHasAuthority(false)} className="flex-1 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400">
             Release Console
           </button>
         )}

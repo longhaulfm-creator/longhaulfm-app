@@ -22,16 +22,13 @@ export const useRadioStation = () => {
     
     try {
       if (active) {
-        // Constraints optimized for real-time interaction
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { 
             echoCancellation: true, 
             noiseSuppression: true, 
             autoGainControl: false,
-            // Shaves off milliseconds by requesting direct hardware access
             latency: 0,
-            sampleRate: 48000, 
-            sampleSize: 16
+            sampleRate: 48000
           } 
         });
         
@@ -42,7 +39,6 @@ export const useRadioStation = () => {
           await localMicRef.current.play();
         }
       } else {
-        // --- THE "GUILLOTINE" KILL ---
         if (micStreamRef.current) {
           micStreamRef.current.getTracks().forEach(track => {
             track.enabled = false; 
@@ -54,7 +50,6 @@ export const useRadioStation = () => {
         if (localMicRef.current) {
           localMicRef.current.pause();
           localMicRef.current.srcObject = null;
-          // Flushes the browser's audio buffer immediately
           localMicRef.current.load(); 
         }
       }
