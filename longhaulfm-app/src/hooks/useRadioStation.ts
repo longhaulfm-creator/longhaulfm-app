@@ -1,21 +1,22 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 export const useRadioStation = () => {
   const localMicRef = useRef<HTMLAudioElement | null>(null);
-  const micStreamRef = useRef<MediaStream | null>(null);
+  const [micStream, setMicStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     const audio = new Audio();
     audio.muted = false; 
     audio.autoplay = true;
+    (audio as any).preservesPitch = false;
     localMicRef.current = audio;
 
     return () => {
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(t => t.stop());
+      if (micStream) {
+        micStream.getTracks().forEach(t => t.stop());
       }
     };
-  }, []);
+  }, [micStream]);
 
   const toggleMicHardware = async (active: boolean) => {
     console.log("🎤 Mic Signal:", active ? "LIVE" : "KILLED");
@@ -32,19 +33,22 @@ export const useRadioStation = () => {
           } 
         });
         
-        micStreamRef.current = stream;
+        setMicStream(stream);
 
         if (localMicRef.current) {
           localMicRef.current.srcObject = stream;
-          await localMicRef.current.play();
+          try {
+            await localMicRef.current.play();
+          } catch (playErr) {
+            console.warn("⚠️ Audio play deferred, retrying...", playErr);
+            setTimeout(() => localMicRef.current?.play(), 50);
+          }
         }
+        return stream; // Return the stream for immediate use
       } else {
-        if (micStreamRef.current) {
-          micStreamRef.current.getTracks().forEach(track => {
-            track.enabled = false; 
-            track.stop();         
-          });
-          micStreamRef.current = null;
+        if (micStream) {
+          micStream.getTracks().forEach(track => track.stop());
+          setMicStream(null);
         }
 
         if (localMicRef.current) {
@@ -52,6 +56,7 @@ export const useRadioStation = () => {
           localMicRef.current.srcObject = null;
           localMicRef.current.load(); 
         }
+        return null;
       }
     } catch (err) {
       console.error("❌ Mic Hardware Error:", err);
@@ -59,5 +64,5 @@ export const useRadioStation = () => {
     }
   };
 
-  return { toggleMicHardware };
+  return { toggleMicHardware, micStream };
 };
