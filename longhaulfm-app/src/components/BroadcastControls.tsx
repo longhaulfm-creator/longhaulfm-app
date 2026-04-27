@@ -14,7 +14,6 @@ interface Props {
 }
 
 export const BroadcastControls: React.FC<Props> = ({ player }) => {
-  // Pull state and setter directly from store
   const isPlaying = useBroadcastStore((s) => s.isPlaying);
   const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying);
   
@@ -28,35 +27,15 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
 
   const canBroadcast = profile?.role === 'admin' || profile?.role === 'dj';
 
-  // Monitor Authority
-  useEffect(() => {
-    if (!hasAuthority) return;
-
-    const channel = supabase.channel('authority_monitor')
-      .on('postgres_changes', { 
-        event: 'DELETE', 
-        schema: 'public', 
-        table: 'spotify_auth' 
-      }, () => {
-        console.warn("🚨 AUTHORITY REVOKED BY ADMIN");
-        setHasAuthority(false);
-        setIsPlaying(false);
-        toggleMicHardware(false);
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, [hasAuthority, setIsPlaying, toggleMicHardware]);
-
   const updateBroadcast = useCallback(async (active: boolean) => {
     try {
-      // 1. Hardware First
+      // 1. Hardware Kill/Open
       await toggleMicHardware(active);
 
-      // 2. Spotify Ducking
+      // 2. Smoother Spotify Ducking (40% volume floor)
       if (player && typeof player.setVolume === 'function') {
         try { 
-          await player.setVolume(active ? 0.15 : 1.0); 
+          await player.setVolume(active ? 0.4 : 1.0); 
         } catch (err) { 
           console.warn("Spotify Volume Error", err); 
         }
@@ -64,28 +43,29 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
 
       // 3. Global Sync (Ably)
       const channel = ably.channels.get('longhaul-live-sync');
-      channel.publish('ducking', { ducked: active });
+      channel.publish('ducking', { ducked: active, djId: profile?.id });
       
-      // 4. Persistence (Supabase)
+      // 4. Database Persistence
       await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1);
 
-      // 5. Local UI Update
-      if (typeof setIsPlaying === 'function') {
-        setIsPlaying(active);
-      } else {
-        console.error("setIsPlaying is not available in the store");
-      }
+      // 5. Store Update
+      setIsPlaying(active);
       
     } catch (err) {
       console.error("Broadcast update failed:", err);
-      // Fail-safe: ensure UI doesn't think it's playing if hardware failed
       setIsPlaying(false);
     }
-  }, [player, toggleMicHardware, setIsPlaying]);
+  }, [player, toggleMicHardware, setIsPlaying, profile?.id]);
 
-  const handleEngage = () => { if (hasAuthority && canBroadcast) updateBroadcast(true); }
-  const handleRelease = () => { if (hasAuthority) updateBroadcast(false); }
+  const handleEngage = useCallback(() => { 
+    if (hasAuthority && canBroadcast && !isPlaying) updateBroadcast(true); 
+  }, [hasAuthority, canBroadcast, isPlaying, updateBroadcast]);
 
+  const handleRelease = useCallback(() => { 
+    if (hasAuthority && isPlaying) updateBroadcast(false); 
+  }, [hasAuthority, isPlaying, updateBroadcast]);
+
+  // Handle Takeover
   const handleTakeover = async () => {
     if (!canBroadcast) return alert("UNAUTHORIZED");
     setIsTransferring(true);
@@ -101,6 +81,7 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
     }
   };
 
+  // Keyboard and Window Focus Listeners
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isSpaceDown && hasAuthority) {
@@ -111,17 +92,29 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
       }
     }
     const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && hasAuthority) {
+      if (e.code === 'Space') {
         e.preventDefault();
         setIsSpaceDown(false);
         handleRelease();
       }
     }
+
+    // KILL SWITCH: If Trust switches windows, the mic must die
+    const onBlur = () => {
+      if (isSpaceDown) {
+        setIsSpaceDown(false);
+        handleRelease();
+      }
+    };
+
     window.addEventListener('keydown', onKeyDown);
     window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+
     return () => { 
       window.removeEventListener('keydown', onKeyDown); 
-      window.removeEventListener('keyup', onKeyUp); 
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
     }
   }, [isSpaceDown, hasAuthority, handleEngage, handleRelease]);
 

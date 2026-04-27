@@ -5,7 +5,7 @@ export const useRadioStation = () => {
   const micStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Create a hidden audio element to pipe the mic to the Virtual Cable
+    // Hidden element to pipe audio to the Virtual Cable
     const audio = new Audio();
     audio.muted = false; 
     audio.autoplay = true;
@@ -19,14 +19,14 @@ export const useRadioStation = () => {
   }, []);
 
   const toggleMicHardware = async (active: boolean) => {
-    console.log("🎤 ToggleMicHardware called with:", active);
+    console.log("🎤 ToggleMicHardware:", active ? "ENERGIZE" : "KILL");
     
     try {
       if (active) {
-        // 1. Request Mic Access
+        // Request Mic Access with noise suppression but no echo cancel (cleaner for radio)
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { 
-            echoCancellation: false, 
+            echoCancellation: true, 
             noiseSuppression: true, 
             autoGainControl: false 
           } 
@@ -34,27 +34,31 @@ export const useRadioStation = () => {
         
         micStreamRef.current = stream;
 
-        // 2. Attach to the audio element (which should output to Virtual Cable)
         if (localMicRef.current) {
           localMicRef.current.srcObject = stream;
           await localMicRef.current.play();
-          console.log("✅ Mic is LIVE to Virtual Cable");
+          console.log("✅ Mic Pipeline Active");
         }
       } else {
-        // 3. Clean up
+        // --- THE KILL SWITCH ---
         if (micStreamRef.current) {
-          micStreamRef.current.getTracks().forEach(track => track.stop());
+          micStreamRef.current.getTracks().forEach(track => {
+            track.enabled = false; // Mute track first
+            track.stop();         // Kill hardware
+          });
           micStreamRef.current = null;
         }
+
         if (localMicRef.current) {
-          localMicRef.current.srcObject = null;
           localMicRef.current.pause();
+          localMicRef.current.srcObject = null;
+          localMicRef.current.load(); // Force clear buffer
         }
-        console.log("🛑 Mic Hardware SHUT DOWN");
+        console.log("🛑 Mic Pipeline Destroyed");
       }
     } catch (err) {
       console.error("❌ Mic Hardware Error:", err);
-      throw err; // Re-throw so BroadcastControls knows the hardware failed
+      throw err;
     }
   };
 
