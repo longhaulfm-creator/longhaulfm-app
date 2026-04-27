@@ -3,7 +3,8 @@ import { supabase } from '../lib/supabase'
 import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface BroadcastState {
-  isPlaying: boolean       
+  isPlaying: boolean
+  setIsPlaying: (playing: boolean) => void // ✅ ADDED THIS
   isMusicPlaying: boolean  
   micAllowed: boolean
   systemKill: boolean
@@ -49,6 +50,10 @@ const dracoParse = (raw: any) => {
 
 export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   isPlaying: false,
+  
+  // ✅ ADDED THIS: The actual function to update the state
+  setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
+
   isMusicPlaying: false,
   micAllowed: true,
   systemKill: false,
