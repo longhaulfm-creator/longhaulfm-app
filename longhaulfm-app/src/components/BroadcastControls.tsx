@@ -29,10 +29,10 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
 
   const updateBroadcast = useCallback(async (active: boolean) => {
     try {
-      // 1. Hardware Kill/Open
+      // 1. Immediate Hardware Toggle
       await toggleMicHardware(active);
 
-      // 2. Smoother Spotify Ducking (40% volume floor)
+      // 2. Optimized Ducking (40% floor for clearer background music)
       if (player && typeof player.setVolume === 'function') {
         try { 
           await player.setVolume(active ? 0.4 : 1.0); 
@@ -41,14 +41,14 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
         }
       }
 
-      // 3. Global Sync (Ably)
+      // 3. Network Sync
       const channel = ably.channels.get('longhaul-live-sync');
       channel.publish('ducking', { ducked: active, djId: profile?.id });
       
-      // 4. Database Persistence
+      // 4. Persistence
       await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1);
 
-      // 5. Store Update
+      // 5. Update Local UI State
       setIsPlaying(active);
       
     } catch (err) {
@@ -65,7 +65,6 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
     if (hasAuthority && isPlaying) updateBroadcast(false); 
   }, [hasAuthority, isPlaying, updateBroadcast]);
 
-  // Handle Takeover
   const handleTakeover = async () => {
     if (!canBroadcast) return alert("UNAUTHORIZED");
     setIsTransferring(true);
@@ -81,7 +80,6 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
     }
   };
 
-  // Keyboard and Window Focus Listeners
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === 'Space' && !isSpaceDown && hasAuthority) {
@@ -99,7 +97,7 @@ export const BroadcastControls: React.FC<Props> = ({ player }) => {
       }
     }
 
-    // KILL SWITCH: If Trust switches windows, the mic must die
+    // Prevents "Sticky Mic" if Trust Alt-Tabs or focuses another window
     const onBlur = () => {
       if (isSpaceDown) {
         setIsSpaceDown(false);

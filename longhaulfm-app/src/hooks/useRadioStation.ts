@@ -5,7 +5,6 @@ export const useRadioStation = () => {
   const micStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => {
-    // Hidden element to pipe audio to the Virtual Cable
     const audio = new Audio();
     audio.muted = false; 
     audio.autoplay = true;
@@ -19,16 +18,20 @@ export const useRadioStation = () => {
   }, []);
 
   const toggleMicHardware = async (active: boolean) => {
-    console.log("🎤 ToggleMicHardware:", active ? "ENERGIZE" : "KILL");
+    console.log("🎤 Mic Signal:", active ? "LIVE" : "KILLED");
     
     try {
       if (active) {
-        // Request Mic Access with noise suppression but no echo cancel (cleaner for radio)
+        // Constraints optimized for real-time interaction
         const stream = await navigator.mediaDevices.getUserMedia({ 
           audio: { 
             echoCancellation: true, 
             noiseSuppression: true, 
-            autoGainControl: false 
+            autoGainControl: false,
+            // Shaves off milliseconds by requesting direct hardware access
+            latency: 0,
+            sampleRate: 48000, 
+            sampleSize: 16
           } 
         });
         
@@ -37,14 +40,13 @@ export const useRadioStation = () => {
         if (localMicRef.current) {
           localMicRef.current.srcObject = stream;
           await localMicRef.current.play();
-          console.log("✅ Mic Pipeline Active");
         }
       } else {
-        // --- THE KILL SWITCH ---
+        // --- THE "GUILLOTINE" KILL ---
         if (micStreamRef.current) {
           micStreamRef.current.getTracks().forEach(track => {
-            track.enabled = false; // Mute track first
-            track.stop();         // Kill hardware
+            track.enabled = false; 
+            track.stop();         
           });
           micStreamRef.current = null;
         }
@@ -52,9 +54,9 @@ export const useRadioStation = () => {
         if (localMicRef.current) {
           localMicRef.current.pause();
           localMicRef.current.srcObject = null;
-          localMicRef.current.load(); // Force clear buffer
+          // Flushes the browser's audio buffer immediately
+          localMicRef.current.load(); 
         }
-        console.log("🛑 Mic Pipeline Destroyed");
       }
     } catch (err) {
       console.error("❌ Mic Hardware Error:", err);
