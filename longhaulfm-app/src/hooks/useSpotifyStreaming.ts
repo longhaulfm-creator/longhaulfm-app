@@ -1,30 +1,44 @@
 import { useEffect, useState, useRef } from 'react';
 import { useBroadcastStore } from '../stores/broadcastStore';
+import { supabase } from '../lib/supabase'; // Ensure you have your supabase client imported
 
-export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
+export const useSpotifyStreaming = (initialToken: string, userRole: string) => {
   const [isReady, setIsReady] = useState(false);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const [playbackState, setPlaybackState] = useState<any>(null);
   const { setNowPlaying } = useBroadcastStore();
   
   const playerRef = useRef<any>(null);
-  const tokenRef = useRef(accessToken);
+  const tokenRef = useRef(initialToken);
 
-  // Keep the token reference updated for the SDK's callback
-  useEffect(() => {
-    if (accessToken && accessToken !== 'get_spotify_token_99') {
-      tokenRef.current = accessToken;
-      console.log("🎫 SDK Token Reference Synchronized");
+  // Helper to fetch a fresh token from your Edge Function
+  const fetchFreshToken = async (): Promise<string> => {
+    try {
+      const { data, error } = await supabase.functions.invoke('spotify-sync');
+      if (error || !data?.get_spotify_token_99) throw new Error("Failed to sync Spotify token");
+      
+      const newToken = data.get_spotify_token_99;
+      tokenRef.current = newToken;
+      console.log("🔄 Edge Function provided fresh token");
+      return newToken;
+    } catch (err) {
+      console.error("🚨 Token Refresh Loop Error:", err);
+      return tokenRef.current; // Fallback to last known token
     }
-  }, [accessToken]);
+  };
+
+  // Sync token if parent component updates it
+  useEffect(() => {
+    if (initialToken && initialToken !== 'get_spotify_token_99') {
+      tokenRef.current = initialToken;
+    }
+  }, [initialToken]);
 
   useEffect(() => {
     const masterRoles = ['admin', 'dj'];
     
     if (
       !masterRoles.includes(userRole) || 
-      !accessToken || 
-      accessToken === 'get_spotify_token_99' ||
       (window as any).SpotifyPlayerStarted
     ) {
       return;
@@ -36,11 +50,11 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
 
       const player = new (window as any).Spotify.Player({
         name: 'Long Haul FM Master Console',
-        // CRITICAL: The SDK calls this function periodically.
-        // By using a ref, we give it the fresh token without restarting the player.
-        getOAuthToken: (cb: (t: string) => void) => {
+        // This callback is the key to preventing the 1-hour crash
+        getOAuthToken: async (cb: (t: string) => void) => {
           console.log("🔄 SDK requested fresh token pulse...");
-          cb(tokenRef.current);
+          const token = await fetchFreshToken();
+          cb(token);
         },
         volume: 0.5
       });
@@ -51,7 +65,6 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
         setIsReady(true);
         (window as any).masterPlayer = player;
 
-        // Transfer playback to this device
         try {
           await fetch('https://api.spotify.com/v1/me/player', {
             method: 'PUT',
@@ -69,8 +82,9 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
 
       player.addListener('authentication_error', ({ message }: any) => {
         console.error('❌ SDK Auth Error:', message);
-        // If auth fails, the token is dead. We need a hard reset of the flag.
         (window as any).SpotifyPlayerStarted = false;
+        // Force a token refresh on auth failure
+        fetchFreshToken();
       });
 
       player.addListener('player_state_changed', (state: any) => {
@@ -95,14 +109,13 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
     }
 
     return () => {
-      // Only disconnect if the component actually unmounts or role changes
       if (playerRef.current) {
         playerRef.current.disconnect();
         playerRef.current = null;
         (window as any).SpotifyPlayerStarted = false;
       }
     };
-  }, [userRole]); // Removed accessToken from dependency to prevent player re-creation
+  }, [userRole]);
 
   const togglePlay = async (shouldPlay: boolean) => {
     if (!playerRef.current) return;

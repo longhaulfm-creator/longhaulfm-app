@@ -21,8 +21,51 @@ export function Logo({ className }: { className?: string }) {
       </g>
 
       {/* Text Elements */}
-      <text x="200" y="245" font-family="Arial Black, sans-serif" font-size="56" fill="#DAA520" text-anchor="middle" font-weight="900">FM</text>
-      <text x="200" y="310" font-family="Arial Black, sans-serif" font-size="42" fill="#FFFFFF" text-anchor="middle" font-weight="900" letter-spacing="2">LONG HAUL</text>
+      <text
+
+      x={200}
+
+      y={245}
+
+      fill="#DAA520"
+
+      fontFamily="Arial Black, sans-serif"
+
+      fontSize={56}
+
+      fontWeight={900}
+
+      textAnchor="middle"
+
+    >
+
+      {"FM"}
+
+    </text>
+
+    <text
+
+      x={200}
+
+      y={310}
+
+      fill="#FFF"
+
+      fontFamily="Arial Black, sans-serif"
+
+      fontSize={36}
+
+      fontWeight={900}
+
+      letterSpacing={2}
+
+      textAnchor="middle"
+
+    >
+
+      {"LONG HAUL"}
+
+    </text>
     </svg>
   )
 }

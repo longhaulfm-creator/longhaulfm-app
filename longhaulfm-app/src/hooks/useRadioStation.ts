@@ -2,68 +2,100 @@ import { useEffect, useRef, useState } from 'react';
 
 export const useRadioStation = () => {
   const micStreamRef = useRef<MediaStream | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const sourceNodeRef = useRef<MediaStreamAudioSourceNode | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
   const [isDucked, setIsDucked] = useState(false);
-
-  // cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (micStreamRef.current) {
-        micStreamRef.current.getTracks().forEach(t => t.stop());
-      }
-    };
-  }, []);
-
-  const toggleMicHardware = async (active: boolean) => {
-    // 1. ENGAGING THE MIC (Spacebar/Button Down)
-    if (active) {
-      try {
-        // Only request the stream if we don't already have one
-        if (!micStreamRef.current) {
-          console.log("🎙️ Attempting to engage Mic hardware...");
-          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-          micStreamRef.current = stream;
-        }
-
-        // Enable the track and trigger Ducking
-        micStreamRef.current.getAudioTracks().forEach(t => (t.enabled = true));
-        setIsDucked(true);
-        console.log("🎤 LIVE - Ducking Engaged");
-
-      } catch (err: any) {
-        // SILENT FAIL: No popups, just console logs
-        console.error("❌ Mic Blocked (OBS/BUTT likely holding lock):", err.message);
-        // We still trigger "Ducking" so the DJ can talk over the music locally 
-        // even if the stream hardware is busy.
-        setIsDucked(true); 
-      }
-    } 
-    
-    // 2. RELEASING THE MIC (Spacebar/Button Up)
-    else {
-      if (micStreamRef.current) {
-        // We don't stop the tracks (to avoid re-init lag next time), just disable them
-        micStreamRef.current.getAudioTracks().forEach(t => (t.enabled = false));
-      }
-      setIsDucked(false);
-      console.log("🎤 MUTED - Music Normal");
-    }
-  };
 
   const killMicComplete = () => {
     if (micStreamRef.current) {
       micStreamRef.current.getTracks().forEach(t => t.stop());
       micStreamRef.current = null;
-      setIsDucked(false);
-      console.log("⚰️ Hardware Connection Terminated");
+    }
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
+      audioCtxRef.current.close();
+      audioCtxRef.current = null;
+    }
+    sourceNodeRef.current = null;
+    gainNodeRef.current = null;
+    setIsDucked(false);
+  };
+
+  useEffect(() => {
+    return () => killMicComplete();
+  }, []);
+
+  const initMicHardware = async () => {
+    if (micStreamRef.current) return;
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: false,
+          channelCount: 1
+        } 
+      });
+
+      // IMMEDIATE SAFETY: Mute tracks before even creating the context
+      stream.getAudioTracks().forEach(t => (t.enabled = false));
+
+      const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+      const ctx = new AudioContextClass();
+      const source = ctx.createMediaStreamSource(stream);
+      const gainNode = ctx.createGain();
+
+      // Set volume to 0 immediately
+      gainNode.gain.setValueAtTime(0, ctx.currentTime);
+      
+      sourceNodeRef.current = source;
+      gainNodeRef.current = gainNode;
+      audioCtxRef.current = ctx;
+      micStreamRef.current = stream;
+
+      if (ctx.state !== 'suspended') await ctx.suspend();
+      
+      console.log("🔒 Hardware Gate: LOCKED");
+    } catch (err: any) {
+      console.error("❌ Setup Failed:", err.message);
+      throw err;
     }
   };
 
-  // We expose initMic as a no-op or a simple check if needed, 
-  // but toggleMicHardware handles the heavy lifting now.
-  const initMic = async () => {
-    console.log("🔍 Mic init deferred to PTT (Push-to-Talk) action.");
-    return null;
+  const toggleMicHardware = async (active: boolean) => {
+    if (active) {
+      if (!micStreamRef.current) await initMicHardware();
+      
+      if (audioCtxRef.current?.state === 'suspended') {
+        await audioCtxRef.current.resume();
+      }
+
+      if (sourceNodeRef.current && gainNodeRef.current && audioCtxRef.current) {
+        sourceNodeRef.current.connect(gainNodeRef.current);
+        gainNodeRef.current.connect(audioCtxRef.current.destination);
+        // Quick ramp up to avoid "pop"
+        gainNodeRef.current.gain.exponentialRampToValueAtTime(1.0, audioCtxRef.current.currentTime + 0.02);
+      }
+
+      micStreamRef.current?.getAudioTracks().forEach(t => (t.enabled = true));
+      setIsDucked(true);
+    } else {
+      if (gainNodeRef.current && audioCtxRef.current) {
+        // Absolute zero
+        gainNodeRef.current.gain.setValueAtTime(0, audioCtxRef.current.currentTime);
+        gainNodeRef.current.disconnect();
+      }
+
+      micStreamRef.current?.getAudioTracks().forEach(t => (t.enabled = false));
+      
+      if (audioCtxRef.current?.state === 'running') {
+        await audioCtxRef.current.suspend();
+      }
+
+      setIsDucked(false);
+    }
   };
 
-  return { toggleMicHardware, initMic, killMicComplete, isDucked };
+  return { initMicHardware, toggleMicHardware, killMicComplete, isDucked };
 };

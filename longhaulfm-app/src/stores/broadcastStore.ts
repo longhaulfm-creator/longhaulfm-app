@@ -1,10 +1,14 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { RealtimeChannel } from '@supabase/supabase-js'
+import { ably } from '../lib/ably'
 
 interface BroadcastState {
-  isPlaying: boolean
+  isPlaying: boolean 
+  isMicLive: boolean 
+  isJinglePlaying: boolean
   setIsPlaying: (playing: boolean) => void
+  setIsMicLive: (live: boolean) => void
   isMusicPlaying: boolean  
   micAllowed: boolean
   systemKill: boolean
@@ -23,6 +27,7 @@ interface BroadcastState {
   subscribeRealtime: () => () => void
   toggleMic: () => Promise<void>
   toggleSystemKill: () => Promise<void>
+  triggerJingle: (url: string) => void
 }
 
 let activeChannel: RealtimeChannel | null = null;
@@ -33,13 +38,9 @@ const dracoParse = (raw: any) => {
   if (typeof data === 'string') {
     try { data = JSON.parse(data); } catch (e) { return null; }
   }
-  
   const core = data.item || data.track || data;
-  
-  // Robust Artist Extraction
   let artist = "Unknown Artist";
   const rawArtist = core.artists || core.artist || data.artists || data.artist;
-  
   if (Array.isArray(rawArtist) && rawArtist.length > 0) {
     artist = rawArtist.map((a: any) => typeof a === 'string' ? a : (a.name || "Unknown")).join(', ');
   } else if (typeof rawArtist === 'string') {
@@ -47,10 +48,8 @@ const dracoParse = (raw: any) => {
   } else if (typeof rawArtist === 'object' && rawArtist !== null) {
     artist = rawArtist.name || "Unknown Artist";
   }
-  
   let artwork = core.artwork || core.album_art || data.artwork || data.album_art;
   if (core.album?.images?.[0]?.url) artwork = core.album.images[0].url;
-
   return {
     title: core.title || core.name || data.title || data.name || "Unknown Title",
     artist: artist,
@@ -63,7 +62,10 @@ const dracoParse = (raw: any) => {
 
 export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   isPlaying: false,
+  isMicLive: false,
+  isJinglePlaying: false,
   setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
+  setIsMicLive: (live: boolean) => set({ isMicLive: live }),
   isMusicPlaying: false,
   micAllowed: true,
   systemKill: false,
@@ -75,6 +77,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   spotifyToken: null,
   broadcastId: null,
   listenerCount: 0,
+
+  triggerJingle: (url: string) => {
+    set({ isJinglePlaying: true });
+    const channel = ably.channels.get('fleet-broadcast');
+    channel.publish('JINGLE_TRIGGER', { url });
+  },
 
   updateListeners: async () => {
     try {
@@ -161,10 +169,8 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_state' }, (payload) => {
           const newData = payload.new as any;
           if (!newData) return;
-          
           const isDJ = !!get().spotifyToken;
           const parsed = dracoParse(newData.track_data);
-          
           set({
             isPlaying: newData.is_playing,
             micAllowed: newData.mic_allowed,

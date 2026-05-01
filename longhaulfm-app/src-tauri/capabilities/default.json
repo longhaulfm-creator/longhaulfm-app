@@ -19,6 +19,9 @@
     "opener:default",
     "deep-link:default",
     "os:default",
-    "notification:default"
+    "notification:default",
+    "http:default",
+    "shell:all",
+    "fetch:default"
   ]
 }

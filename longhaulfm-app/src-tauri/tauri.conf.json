@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "longhaulfm-app",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "identifier": "za.co.longhaulfm",
   "build": {
     "beforeDevCommand": "bun run dev",
@@ -14,12 +14,16 @@
     "windows": [
       {
         "title": "Longhaul FM",
-        "width": 800,
-        "height": 600
+        "width": 1000,
+        "height": 800,
+        "label": "main"
       }
     ],
     "security": {
-      "csp": "default-src 'self' https://tauri.localhost; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://i.scdn.co https://longhaul-fm.co.za; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.spotify.com https://sdk.scdn.co https://*.ably.io wss://*.ably.io https://longhaul-fm.co.za;"
+      "capabilities": [
+        "core-capability"
+      ],
+      "csp": "default-src 'self' https://tauri.localhost; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://i.scdn.co https://longhaul-fm.co.za https://storage.googleapis.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.spotify.com https://sdk.scdn.co https://*.ably.io wss://*.ably.io https://longhaul-fm.co.za https://storage.googleapis.com;"
     }
   },
   "bundle": {
@@ -34,12 +38,19 @@
     ]
   },
   "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RDdFNTI5M0NBRTEzODgKUldTSUU2NDhLZVhYaU9vZkgzNWdwQktETzBFSXpZSVdaWTFLL1JoMldSSVpWaWxaaDQxUkFaeGcK",
+      "endpoints": [
+        "https://longhaul-fm.co.za/api/update/{{target}}/{{current_version}}"
+      ]
+    },
     "deep-link": {
       "mobile": [
         {
-          "host": "longhaul-fm.co.za",
+          "host": "longhaul-fm.co.za", 
           "pathPrefix": ["/auth/callback"],
-          "appLink": true
+          "appLink": true,
+          "scheme": ["longhaulfm"]
         }
       ]
     }
