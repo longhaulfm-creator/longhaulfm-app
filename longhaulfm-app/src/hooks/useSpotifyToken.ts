@@ -3,46 +3,42 @@ import { supabase } from '../lib/supabase';
 
 const MASTER_DJ_TOKEN_ID = '6ba16792-7108-4d64-964c-f1e6005d5e2e';
 
+// Safety check for token validity
+const isValidSpotifyToken = (t: string | null) => {
+  return typeof t === 'string' && t.length > 50 && t !== 'get_spotify_token_99';
+};
+
 export const useSpotifyToken = () => {
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
-  const channelRef = useRef<any>(null);
   const isRefreshing = useRef(false);
+  const activeChannel = useRef<any>(null);
 
-  // 1. Programmatic Refresh via Edge Function
   const triggerRefresh = useCallback(async () => {
-    // Only refresh if we aren't already doing it
     if (isRefreshing.current) return null;
     isRefreshing.current = true;
-
-    console.log('🔄 Syncing with Spotify Cloud API...');
     
     try {
-      // We call the function. It handles the Spotify 'refresh_token' flow internally.
       const { data, error: refreshError } = await supabase.functions.invoke('spotify-sync', {
         body: { userId: MASTER_DJ_TOKEN_ID }
       });
-
       if (refreshError) throw refreshError;
-      
-      // We expect the Edge Function to return the updated access token
-      if (data?.get_spotify_token_99) {
-        setToken(data.get_spotify_token_99);
-        return data.get_spotify_token_99;
+
+      // Note: Value based on change from 2026-04-09
+      const newToken = data?.get_spotify_token_99;
+      if (isValidSpotifyToken(newToken)) {
+        setToken(newToken);
+        return newToken;
       }
     } catch (err: any) {
-      console.error('❌ Spotify Sync Failed:', err.message);
-      setError(`Auth Sync Error: ${err.message}`);
-      return null;
+      console.error('❌ Sync Failed:', err.message);
     } finally {
-      // Debounce the refresh to prevent spamming the Edge Function
-      setTimeout(() => { isRefreshing.current = false; }, 2000);
+      setTimeout(() => { isRefreshing.current = false; }, 5000);
     }
   }, []);
 
-  // 2. Initial Fetch & Expiry Check
   const fetchCurrentMasterToken = useCallback(async () => {
     try {
       const { data, error: fetchError } = await supabase
@@ -53,19 +49,17 @@ export const useSpotifyToken = () => {
 
       if (fetchError) throw fetchError;
 
-      if (data) {
+      const currentToken = data?.get_spotify_token_99;
+      if (isValidSpotifyToken(currentToken)) {
         const now = new Date();
         const expiry = new Date(data.expires_at);
-        
         // Refresh if within 5 minutes of expiry
         if (now >= new Date(expiry.getTime() - 300000)) {
-          console.log('⏰ Token near expiry, refreshing...');
           await triggerRefresh();
         } else {
-          setToken(data.get_spotify_token_99);
+          setToken(currentToken);
         }
       } else {
-        // No record found, attempt initial sync
         await triggerRefresh();
       }
     } catch (err: any) {
@@ -75,83 +69,67 @@ export const useSpotifyToken = () => {
     }
   }, [triggerRefresh]);
 
-  // 3. Realtime Subscription Logic
   useEffect(() => {
-    let mounted = true;
+    let isMounted = true;
+
+    fetchCurrentMasterToken();
+
+    // DEFENSIVE REALTIME:
+    // We check if a channel with this name is already tracked by the client
     const channelName = `token_sync_${MASTER_DJ_TOKEN_ID}`;
-
-    const setupSync = async () => {
-      await fetchCurrentMasterToken();
-      if (!mounted) return;
-
-      // Clean up any stale channels from previous renders
-      const existingChannel = supabase.getChannels().find(c => c.topic === `realtime:${channelName}`);
-      if (existingChannel) {
-        await supabase.removeChannel(existingChannel);
+    
+    const setupRealtime = async () => {
+      // 1. Force remove any existing channel with this name to clear SDK internal state
+      const existingChannels = supabase.getChannels();
+      const duplicate = existingChannels.find(c => c.topic === `realtime:${channelName}`);
+      if (duplicate) {
+        await supabase.removeChannel(duplicate);
       }
 
+      if (!isMounted) return;
+
+      // 2. Create fresh channel
       const channel = supabase.channel(channelName);
       
-      channel.on(
-        'postgres_changes',
-        { 
-          event: 'UPDATE', 
-          schema: 'public', 
-          table: 'spotify_auth',
-          filter: `id=eq.${MASTER_DJ_TOKEN_ID}` 
-        },
-        (payload) => {
-          if (payload.new?.get_spotify_token_99) {
-            console.log('⚡ New Master Token Received via Realtime');
-            setToken(payload.new.get_spotify_token_99);
+      // 3. Chain the .on() and .subscribe() in a single synchronous block
+      channel
+        .on(
+          'postgres_changes',
+          { 
+            event: 'UPDATE', 
+            schema: 'public', 
+            table: 'spotify_auth',
+            filter: `id=eq.${MASTER_DJ_TOKEN_ID}` 
+          },
+          (payload: any) => {
+            const newToken = payload.new?.get_spotify_token_99;
+            if (isValidSpotifyToken(newToken) && isMounted) {
+              console.log('⚡ Token synced via Realtime');
+              setToken(newToken);
+            }
           }
-        }
-      );
+        )
+        .subscribe((status) => {
+          if (status === 'SUBSCRIBED') {
+            console.log('📡 Realtime: Listening for token updates');
+          }
+        });
 
-      channel.subscribe((status) => {
-        if (status === 'SUBSCRIBED') {
-          console.log('📡 Realtime Auth Channel: ONLINE');
-        }
-      });
-
-      channelRef.current = channel;
+      activeChannel.current = channel;
     };
 
-    setupSync();
+    setupRealtime();
+
+    const interval = setInterval(fetchCurrentMasterToken, 600000);
 
     return () => {
-      mounted = false;
-      if (channelRef.current) {
-        supabase.removeChannel(channelRef.current);
+      isMounted = false;
+      clearInterval(interval);
+      if (activeChannel.current) {
+        supabase.removeChannel(activeChannel.current);
       }
     };
   }, [fetchCurrentMasterToken]); 
 
-  // 4. Manually Take Control (e.g., when the DJ logs in fresh)
-  const takeControlAsDJ = async (newAuth: { get_spotify_token_99: string, refresh_token: string }) => {
-    try {
-      const { error } = await supabase
-        .from('spotify_auth')
-        .update({
-          get_spotify_token_99: newAuth.get_spotify_token_99,
-          refresh_token: newAuth.refresh_token,
-          expires_at: new Date(Date.now() + 3600 * 1000).toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', MASTER_DJ_TOKEN_ID);
-
-      if (error) throw error;
-      setToken(newAuth.get_spotify_token_99);
-    } catch (err: any) {
-      setError(`Failed to seize Master Token: ${err.message}`);
-    }
-  };
-
-  return { 
-    token, 
-    loading, 
-    error, 
-    takeControlAsDJ, 
-    refreshLocal: fetchCurrentMasterToken 
-  };
+  return { token, loading, error };
 };

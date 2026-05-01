@@ -10,17 +10,23 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
   const playerRef = useRef<any>(null);
   const tokenRef = useRef(accessToken);
 
-  // 1. Keep the token reference updated for the SDK's internal refresh callback
+  // Keep the token reference updated for the SDK's callback
   useEffect(() => {
-    tokenRef.current = accessToken;
-    console.log("🎫 SDK Token Reference Updated");
+    if (accessToken && accessToken !== 'get_spotify_token_99') {
+      tokenRef.current = accessToken;
+      console.log("🎫 SDK Token Reference Synchronized");
+    }
   }, [accessToken]);
 
   useEffect(() => {
     const masterRoles = ['admin', 'dj'];
     
-    // 2. SINGLETON LOCK: Prevent React Strict Mode or double-mounting from creating 2 players
-    if (!masterRoles.includes(userRole) || !accessToken || (window as any).SpotifyPlayerStarted) {
+    if (
+      !masterRoles.includes(userRole) || 
+      !accessToken || 
+      accessToken === 'get_spotify_token_99' ||
+      (window as any).SpotifyPlayerStarted
+    ) {
       return;
     }
 
@@ -30,21 +36,22 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
 
       const player = new (window as any).Spotify.Player({
         name: 'Long Haul FM Master Console',
-        // The SDK calls this whenever it needs to re-authorize
-        getOAuthToken: (cb: (t: string) => void) => cb(tokenRef.current),
-        volume: 0.5,
-        enableMediaSession: true 
+        // CRITICAL: The SDK calls this function periodically.
+        // By using a ref, we give it the fresh token without restarting the player.
+        getOAuthToken: (cb: (t: string) => void) => {
+          console.log("🔄 SDK requested fresh token pulse...");
+          cb(tokenRef.current);
+        },
+        volume: 0.5
       });
 
-      // --- EVENT LISTENERS ---
       player.addListener('ready', async ({ device_id }: { device_id: string }) => {
         console.log('✅ Signal Connected to Device:', device_id);
         setDeviceId(device_id);
         setIsReady(true);
         (window as any).masterPlayer = player;
 
-        // 3. FORCE TRANSFER: Tell Spotify this laptop tab is now the BOSS
-        // This prevents the "random skipping" caused by other active devices
+        // Transfer playback to this device
         try {
           await fetch('https://api.spotify.com/v1/me/player', {
             method: 'PUT',
@@ -60,44 +67,25 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
         }
       });
 
-      player.addListener('not_ready', ({ device_id }: { device_id: string }) => {
-        console.log('❌ Device Offline:', device_id);
-        setIsReady(false);
+      player.addListener('authentication_error', ({ message }: any) => {
+        console.error('❌ SDK Auth Error:', message);
+        // If auth fails, the token is dead. We need a hard reset of the flag.
+        (window as any).SpotifyPlayerStarted = false;
       });
 
       player.addListener('player_state_changed', (state: any) => {
         if (state) {
           setPlaybackState(state);
           setNowPlaying(state);
-        } else {
-          // If state is null, Spotify likely took the session away
-          console.warn("⚠️ Lost playback state control");
         }
-      });
-
-      // --- ERROR HANDLING ---
-      player.addListener('initialization_error', ({ message }: any) => {
-        console.error('Init Error:', message);
-        (window as any).SpotifyPlayerStarted = false;
-      });
-      
-      player.addListener('authentication_error', ({ message }: any) => {
-        console.error('Auth Error (Token likely poisoned):', message);
-        (window as any).SpotifyPlayerStarted = false;
-      });
-
-      player.addListener('account_error', ({ message }: any) => {
-        console.error('🛑 PREMIUM REQUIRED:', message);
       });
 
       await player.connect();
       playerRef.current = player;
     };
 
-    // Load SDK logic
     if (!(window as any).Spotify) {
       const script = document.createElement("script");
-      script.id = "spotify-player-script";
       script.src = "https://sdk.scdn.co/spotify-player.js";
       script.async = true;
       document.body.appendChild(script);
@@ -107,20 +95,18 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
     }
 
     return () => {
-      // 4. CLEANUP: Kill the singleton lock so it can restart on refresh
+      // Only disconnect if the component actually unmounts or role changes
       if (playerRef.current) {
-        console.log("♻️ Disconnecting Player...");
         playerRef.current.disconnect();
         playerRef.current = null;
         (window as any).SpotifyPlayerStarted = false;
       }
     };
-  }, [userRole, setNowPlaying]); // Notice: No accessToken here to prevent re-renders
+  }, [userRole]); // Removed accessToken from dependency to prevent player re-creation
 
   const togglePlay = async (shouldPlay: boolean) => {
     if (!playerRef.current) return;
     try {
-      await playerRef.current.activateElement();
       if (shouldPlay) await playerRef.current.resume();
       else await playerRef.current.pause();
     } catch (error) {
@@ -128,11 +114,5 @@ export const useSpotifyStreaming = (accessToken: string, userRole: string) => {
     }
   };
 
-  return { 
-    player: playerRef.current, 
-    isReady, 
-    deviceId, 
-    playbackState, 
-    togglePlay 
-  };
+  return { player: playerRef.current, isReady, deviceId, playbackState, togglePlay };
 };

@@ -1,174 +1,89 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { useBroadcastStore } from '@/stores/broadcastStore'
-import { useRadioStation } from '@/hooks/useRadioStation'
 import { cn } from '@/lib/utils'
-import { Play, Pause, Music, Clock, RefreshCw } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
+import { Play, Pause, Music, RefreshCw } from 'lucide-react'
 
-interface Props {
-  player: any
-  playbackState: any
-  togglePlay?: (shouldPlay: boolean) => void 
-  isReady: boolean
-}
-
-export function NowPlaying({ player, playbackState, togglePlay, isReady }: Props) {
-  const { currentTrack, isPlaying, elapsed, duration_secs, tickElapsed, systemKill } = useBroadcastStore()
-  const { isDucked } = useRadioStation()
+export function NowPlaying({ player, playbackState }: any) {
+  const { currentTrack, isPlaying, elapsed, duration_secs, tickElapsed } = useBroadcastStore()
   const audioRef = useRef<HTMLAudioElement>(null)
   const [isStreamPlaying, setIsStreamPlaying] = useState(false)
-  const [isSyncing, setIsSyncing] = useState(false)
+  const isMaster = !!player
 
-  const formatTime = (seconds: number) => {
-    if (!seconds || isNaN(seconds)) return "0:00";
-    const mins = Math.floor(seconds / 60)
-    const secs = Math.floor(seconds % 60)
-    return `${mins}:${secs.toString().padStart(2, '0')}`
+  // Progress Sync
+  useEffect(() => {
+    if (!isPlaying) return
+    const timer = setInterval(() => tickElapsed(), 1000)
+    return () => clearInterval(timer)
+  }, [isPlaying, tickElapsed])
+
+  const formatTime = (s: number) => {
+    if (!s || isNaN(s)) return "0:00"
+    return `${Math.floor(s / 60)}:${Math.floor(s % 60).toString().padStart(2, '0')}`
   }
 
-  useEffect(() => {
-    const shouldTick = !!(playbackState && !playbackState.paused) || isPlaying;
-    if (!shouldTick || systemKill) return;
-    const timer = setInterval(() => { tickElapsed(); }, 1000);
-    return () => clearInterval(timer);
-  }, [playbackState?.paused, isPlaying, systemKill, tickElapsed]);
-
-  useEffect(() => {
-    if (audioRef.current) audioRef.current.volume = isDucked ? 0.2 : 1.0;
-  }, [isDucked]);
-
-  const isSpotifyActive = !!(playbackState && !playbackState.paused);
-  const isLocalPlaying = player ? isSpotifyActive : isStreamPlaying;
-
-  const handleEngageClick = async () => {
-    if (systemKill || isSyncing) return;
-    setIsSyncing(true);
-    const activating = !isLocalPlaying;
-
-    try {
-      await supabase.functions.invoke('spotify-sync', {
-        body: { action: activating ? 'engage' : 'disengage' }
-      });
-
-      if (player) {
-        if (togglePlay && isReady) await togglePlay(activating);
-      } else {
-        if (audioRef.current) {
-          activating ? await audioRef.current.play() : audioRef.current.pause();
-          setIsStreamPlaying(activating);
-        }
+  // Use Local Spotify data if Admin, otherwise use Global Synced Store
+  const meta = useMemo(() => {
+    if (isMaster && playbackState?.track_window?.current_track) {
+      const t = playbackState.track_window.current_track
+      return {
+        title: t.name,
+        artist: t.artists[0].name,
+        art: t.album.images[0]?.url,
+        pos: playbackState.position / 1000,
+        dur: playbackState.duration / 1000
       }
-    } catch (err) {
-      console.error("Broadcast Sync Failed:", err);
-    } finally {
-      setIsSyncing(false);
     }
-  };
-
-  /** * FAIL-SAFE METADATA MAPPING
-   * This ensures that no matter where the data comes from (SDK vs DB), 
-   * the Anonymous UI can actually render it.
-   */
-  const trackTitle = playbackState?.track_window?.current_track?.name 
-    || currentTrack?.title 
-    || currentTrack?.name 
-    || "STATION IDLE";
-
-  const artistName = playbackState?.track_window?.current_track?.artists?.[0]?.name 
-    || currentTrack?.artist 
-    || (Array.isArray(currentTrack?.artists) ? currentTrack?.artists[0]?.name : currentTrack?.artists)
-    || "Unknown Artist";
-
-  const artworkUrl = playbackState?.track_window?.current_track?.album?.images?.[0]?.url 
-    || currentTrack?.artwork 
-    || currentTrack?.album_art;
-  
-  // Progress Logic
-  const currentPos = player ? (playbackState?.position / 1000 || elapsed) : elapsed;
-  const totalDuration = player ? (playbackState?.duration / 1000 || duration_secs) : duration_secs;
-  const progressPercent = totalDuration > 0 ? Math.min((currentPos / totalDuration) * 100, 100) : 0;
+    return {
+      title: currentTrack?.title || "STATION IDLE",
+      artist: currentTrack?.artist || "LONG HAUL FM",
+      art: currentTrack?.artwork,
+      pos: elapsed,
+      dur: duration_secs
+    }
+  }, [isMaster, playbackState, currentTrack, elapsed, duration_secs])
 
   return (
-    <div className="flex flex-col bg-brand/30 overflow-hidden relative border border-white/5 shadow-2xl rounded-lg shrink-0">
-      {!player && (
-        <audio 
-          ref={audioRef} 
-          src="https://radio.longhaul-fm.co.za/radio/8000/radio.mp3" 
-          preload="auto" 
-          crossOrigin="anonymous" 
-          playsInline 
-        />
-      )}
-
-      {/* Signal Status Bar */}
-      <div className="py-1 px-4 flex justify-between bg-black/40 border-b border-white/5">
-        <div className="flex items-center gap-2">
-           <div className={cn("w-1.5 h-1.5 rounded-full", (isLocalPlaying || isPlaying) ? "bg-green-500 animate-pulse" : "bg-white/20")} />
-           <span className="font-header text-[9px] tracking-widest text-gold uppercase font-bold">Signal Monitor</span>
-        </div>
-        <span className={cn("text-[9px] font-bold uppercase", systemKill ? "text-red-500" : (isLocalPlaying || isPlaying) ? "text-green-400" : "text-white/20")}>
-          {player ? 'MASTER LINK' : 'RELAY LINK'}
-        </span>
+    <div className="bg-brand/30 border border-white/5 rounded-lg overflow-hidden shadow-2xl">
+      {!isMaster && <audio ref={audioRef} src="https://radio.longhaul-fm.co.za/radio/8000/radio.mp3" crossOrigin="anonymous" />}
+      
+      <div className="p-1.5 px-4 bg-black/60 border-b border-white/5 flex justify-between items-center">
+        <span className="text-[8px] font-black uppercase tracking-widest text-gold">Signal Monitor</span>
+        <span className="text-[8px] font-black uppercase text-white/40">{isMaster ? 'MASTER' : 'RELAY'}</span>
       </div>
 
       <div className="p-4">
         <div className="flex gap-4 items-center mb-4">
-          {/* Album Art */}
-          <div className="h-20 w-20 rounded bg-black/60 border border-gold/20 overflow-hidden shadow-lg relative">
-            {artworkUrl ? (
-              <img 
-                src={artworkUrl} 
-                alt="Art" 
-                className={cn("w-full h-full object-cover", (!isLocalPlaying && !isPlaying || systemKill) && "grayscale opacity-30")} 
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center">
-                <Music size={16} className="text-gold/10" />
-              </div>
-            )}
+          <div className="h-20 w-20 bg-black rounded border border-white/10 overflow-hidden">
+            {meta.art ? <img src={meta.art} className="w-full h-full object-cover" /> : <Music className="m-auto mt-6 opacity-10" />}
           </div>
-
-          {/* Track Info */}
           <div className="min-w-0 flex-1">
-            <h2 className="font-header text-sm text-white truncate uppercase tracking-tight leading-tight">
-              {trackTitle}
-            </h2>
-            <p className="text-[10px] text-gold/60 truncate uppercase font-bold tracking-tighter mb-1">
-              {artistName}
-            </p>
-            <div className="flex items-center gap-2 mt-1">
-               <Clock size={10} className="text-gold/50" />
-               <span className="font-mono text-[10px] text-gold/80">
-                 {formatTime(currentPos)} / {formatTime(totalDuration)}
-               </span>
+            <h2 className="text-white font-bold truncate uppercase text-sm">{meta.title}</h2>
+            <p className="text-gold/60 text-[10px] font-bold truncate uppercase">{meta.artist}</p>
+            <div className="mt-2 text-[10px] font-mono text-gold/80 bg-black/40 px-2 py-0.5 rounded inline-block">
+              {formatTime(meta.pos)} / {formatTime(meta.dur)}
             </div>
           </div>
         </div>
 
-        {/* Action Button */}
         <button 
-          onClick={handleEngageClick}
-          disabled={(player && !isReady) || isSyncing}
+          onClick={() => {
+            if (isMaster) return // Admin controls via BroadcastControls
+            if (!audioRef.current) return
+            isStreamPlaying ? audioRef.current.pause() : audioRef.current.play()
+            setIsStreamPlaying(!isStreamPlaying)
+          }}
           className={cn(
-            "w-full h-10 flex gap-2 items-center justify-center font-header text-[10px] rounded border-b-2 transition-all active:translate-y-0.5 uppercase tracking-widest font-bold", 
-            isLocalPlaying ? "bg-signal-red text-white border-red-900" : "bg-gold text-brand-dark border-amber-700",
-            isSyncing && "opacity-70 animate-pulse cursor-wait"
+            "w-full py-3 rounded font-black uppercase text-[10px] tracking-[0.2em] transition-all",
+            (isMaster ? (playbackState && !playbackState.paused) : isStreamPlaying) ? "bg-red-600 text-white" : "bg-gold text-black"
           )}
         >
-          {isSyncing ? (
-            <><RefreshCw size={12} className="animate-spin" /> Syncing...</>
-          ) : isLocalPlaying ? (
-            <><Pause size={12} /> Disengage</>
-          ) : (
-            <><Play size={12} /> Engage Live</>
-          )}
+          {(isMaster ? (playbackState && !playbackState.paused) : isStreamPlaying) ? "Disengage Broadcast" : "Engage Live Link"}
         </button>
 
-        {/* Progress Bar */}
-        <div className="mt-4 relative w-full h-1.5 bg-black/40 rounded-full overflow-hidden">
+        <div className="mt-4 h-1 w-full bg-black/60 rounded-full overflow-hidden">
           <div 
-            className="absolute top-0 left-0 h-full bg-gold transition-all duration-1000 ease-linear shadow-[0_0_8px_#FFD700]" 
-            style={{ width: `${progressPercent}%` }} 
+            className="h-full bg-gold transition-all duration-1000 ease-linear" 
+            style={{ width: `${(meta.pos / meta.dur) * 100}%` }} 
           />
         </div>
       </div>

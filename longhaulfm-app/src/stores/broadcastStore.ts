@@ -4,7 +4,7 @@ import { RealtimeChannel } from '@supabase/supabase-js'
 
 interface BroadcastState {
   isPlaying: boolean
-  setIsPlaying: (playing: boolean) => void // ✅ ADDED THIS
+  setIsPlaying: (playing: boolean) => void
   isMusicPlaying: boolean  
   micAllowed: boolean
   systemKill: boolean
@@ -15,9 +15,11 @@ interface BroadcastState {
   duration_secs: number
   spotifyToken: string | null
   broadcastId: string | null
+  listenerCount: number
   setNowPlaying: (state: any) => Promise<void>
   tickElapsed: () => void
   fetchInitial: () => Promise<void>
+  updateListeners: () => Promise<void>
   subscribeRealtime: () => () => void
   toggleMic: () => Promise<void>
   toggleSystemKill: () => Promise<void>
@@ -31,13 +33,24 @@ const dracoParse = (raw: any) => {
   if (typeof data === 'string') {
     try { data = JSON.parse(data); } catch (e) { return null; }
   }
+  
   const core = data.item || data.track || data;
+  
+  // Robust Artist Extraction
   let artist = "Unknown Artist";
-  const rawArtist = core.artist || core.artists || data.artist || data.artists;
-  if (Array.isArray(rawArtist)) artist = rawArtist.map((a: any) => a.name || a).join(', ');
-  else if (typeof rawArtist === 'object') artist = rawArtist.name || "Unknown Artist";
+  const rawArtist = core.artists || core.artist || data.artists || data.artist;
+  
+  if (Array.isArray(rawArtist) && rawArtist.length > 0) {
+    artist = rawArtist.map((a: any) => typeof a === 'string' ? a : (a.name || "Unknown")).join(', ');
+  } else if (typeof rawArtist === 'string') {
+    artist = rawArtist;
+  } else if (typeof rawArtist === 'object' && rawArtist !== null) {
+    artist = rawArtist.name || "Unknown Artist";
+  }
+  
   let artwork = core.artwork || core.album_art || data.artwork || data.album_art;
   if (core.album?.images?.[0]?.url) artwork = core.album.images[0].url;
+
   return {
     title: core.title || core.name || data.title || data.name || "Unknown Title",
     artist: artist,
@@ -50,10 +63,7 @@ const dracoParse = (raw: any) => {
 
 export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   isPlaying: false,
-  
-  // ✅ ADDED THIS: The actual function to update the state
   setIsPlaying: (playing: boolean) => set({ isPlaying: playing }),
-
   isMusicPlaying: false,
   micAllowed: true,
   systemKill: false,
@@ -64,6 +74,20 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   duration_secs: 0,
   spotifyToken: null,
   broadcastId: null,
+  listenerCount: 0,
+
+  updateListeners: async () => {
+    try {
+      const res = await fetch('https://radio.longhaul-fm.co.za/api/nowplaying/1');
+      const data = await res.json();
+      const mainMount = data.station.mounts.find(
+        (m: any) => m.name === '/radio.mp3' || m.path === '/radio.mp3'
+      );
+      set({ listenerCount: mainMount?.listeners?.unique || 0 });
+    } catch (e) {
+      console.error("❌ Mount Sync Error:", e);
+    }
+  },
 
   tickElapsed: () => set((state) => ({ 
     elapsed: state.elapsed < state.duration_secs ? state.elapsed + 1 : state.elapsed 
@@ -89,18 +113,13 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
   },
 
   fetchInitial: async () => {
-    const { data: { session } } = await supabase.auth.getSession();
-    if (!session) return;
-
+    get().updateListeners();
     try {
-      // 1. Fetch Broadcast State
-      const { data: stateData, error: stateError } = await supabase
+      const { data: stateData } = await supabase
         .from('broadcast_state')
         .select('*')
         .limit(1)
         .maybeSingle();
-
-      if (stateError) console.error("❌ Broadcast State Error:", stateError.message);
 
       if (stateData) {
         const parsed = dracoParse(stateData.track_data);
@@ -113,23 +132,21 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
           upcomingTracks: stateData.track_data?.upcoming || [],
           duration_secs: parsed?.duration_ms ? Math.floor(parsed.duration_ms / 1000) : 0,
           elapsed: parsed?.progress_ms ? Math.floor(parsed.progress_ms / 1000) : 0,
-          isFallbackActive: stateData.system_kill || (!stateData.is_playing && !get().isMusicPlaying)
+          isFallbackActive: stateData.system_kill || (!stateData.is_playing)
         });
       }
 
-      // 2. Fetch Token using NEW column name
-      const { data: authData, error: authError } = await supabase
-        .from('spotify_auth')
-        .select('get_spotify_token_99')
-        .limit(1)
-        .maybeSingle();
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session) {
+        const { data: authData } = await supabase
+          .from('spotify_auth')
+          .select('get_spotify_token_99')
+          .limit(1)
+          .maybeSingle();
 
-      if (authError) {
-        console.error("❌ Spotify Auth Fetch Error:", authError.message);
-      }
-
-      if (authData?.get_spotify_token_99) {
-        set({ spotifyToken: authData.get_spotify_token_99 });
+        if (authData?.get_spotify_token_99) {
+          set({ spotifyToken: authData.get_spotify_token_99 });
+        }
       }
     } catch (e) {
       console.error("❌ Critical Store Error:", e);
@@ -138,14 +155,13 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
 
   subscribeRealtime: () => {
     if (activeChannel) return () => {};
+    const listenerInterval = setInterval(() => get().updateListeners(), 30000);
 
     activeChannel = supabase.channel('station-engine-room')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'broadcast_state' }, (payload) => {
           const newData = payload.new as any;
           if (!newData) return;
           
-          // If we are currently the active streamer, we ignore external track updates 
-          // to prevent "looping" our own updates back into our local state.
           const isDJ = !!get().spotifyToken;
           const parsed = dracoParse(newData.track_data);
           
@@ -162,16 +178,12 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'spotify_auth' }, (payload) => {
           const newData = payload.new as any;
-          // Listen for the new column in Realtime updates
-          if (newData.get_spotify_token_99) {
-            set({ spotifyToken: newData.get_spotify_token_99 });
-          } else {
-            set({ spotifyToken: null });
-          }
+          set({ spotifyToken: newData.get_spotify_token_99 || null });
       })
       .subscribe();
 
     return () => {
+      clearInterval(listenerInterval);
       if (activeChannel) {
         supabase.removeChannel(activeChannel);
         activeChannel = null;
@@ -208,7 +220,6 @@ export const useBroadcastStore = create<BroadcastState>((set, get) => ({
     });
 
     const id = get().broadcastId;
-    // Only update the database if we have a valid token (meaning we are the active DJ)
     if (id && get().spotifyToken && trackPayload && musicActive) {
       await supabase
         .from('broadcast_state')

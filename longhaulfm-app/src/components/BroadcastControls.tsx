@@ -3,149 +3,157 @@ import { useBroadcastStore } from '@/stores/broadcastStore'
 import { useAuthStore } from '@/stores/authStore'
 import { useRadioStation } from '@/hooks/useRadioStation'
 import { useSpotifyToken } from '@/hooks/useSpotifyToken'
-import { supabase } from '@/lib/supabase'
 import { ably } from '@/lib/ably'
-import { Mic } from 'lucide-react'
+import { Mic, Radio, LogOut, Loader2 } from 'lucide-react'
 
-interface Props { 
-  player: any; 
-  userRole?: string; 
-  deviceId?: string | null 
-}
+interface Props { player: any; }
 
 export const BroadcastControls: React.FC<Props> = ({ player }) => {
   const isPlaying = useBroadcastStore((s) => s.isPlaying);
   const setIsPlaying = useBroadcastStore((s) => s.setIsPlaying);
-  
   const { profile } = useAuthStore();
-  const { toggleMicHardware } = useRadioStation(); 
-  const { takeControlAsDJ, token } = useSpotifyToken();
+  
+  const { toggleMicHardware, killMicComplete } = useRadioStation(); 
+  const { token } = useSpotifyToken(); // Ensure this matches your hook's return
 
   const [hasAuthority, setHasAuthority] = useState(false);
-  const [isTransferring, setIsTransferring] = useState(false);
-  const isSpaceDownRef = useRef(false);
-
-  const canBroadcast = profile?.role === 'admin' || profile?.role === 'dj';
+  const [isClaiming, setIsClaiming] = useState(false);
+  const isBroadcastingRef = useRef(false);
 
   const updateBroadcast = useCallback(async (active: boolean) => {
+    if (isBroadcastingRef.current === active) return;
+    isBroadcastingRef.current = active;
+
     try {
-      // 1. Hardware Toggle & Stream Capture
-      const stream = await toggleMicHardware(active);
-
-      // 2. Spotify Ducking
+      await toggleMicHardware(active);
+      
       if (player?.setVolume) {
-        await player.setVolume(active ? 0.3 : 1.0); // Slightly deeper duck for clarity
+        // Drop music to 20% when talking
+        await player.setVolume(active ? 0.2 : 1.0); 
       }
-
-      // 3. Network Sync
-      // NOTE: If you aren't hearing audio, it's because 'ducking' is just a message.
-      // You need a way to pipe the 'stream' data to the listeners here.
+      
+      // Global ducking for listeners
       const channel = ably.channels.get('longhaul-live-sync');
-      channel.publish('ducking', { 
-        ducked: active, 
-        djId: profile?.id,
-        timestamp: Date.now() 
-      });
+      channel.publish('ducking', { ducked: active });
       
-      // 4. Database Sync
-      await supabase.from('broadcast_state').update({ is_playing: active }).eq('id', 1);
-
-      // 5. Global State Update
       setIsPlaying(active);
-      
     } catch (err) {
-      console.error("Broadcast update failed:", err);
-      setIsPlaying(false);
+      console.warn("PTT Logic Note:", err);
     }
-  }, [player, toggleMicHardware, setIsPlaying, profile?.id]);
+  }, [player, toggleMicHardware, setIsPlaying]);
 
-  const handleEngage = useCallback(() => { 
-    if (hasAuthority && canBroadcast && !isPlaying) {
-      updateBroadcast(true);
-    }
-  }, [hasAuthority, canBroadcast, isPlaying, updateBroadcast]);
-
-  const handleRelease = useCallback(() => { 
-    if (hasAuthority && isPlaying) {
-      updateBroadcast(false);
-    }
-  }, [hasAuthority, isPlaying, updateBroadcast]);
-
-  // Keyboard Listeners
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.code === 'Space' && !isSpaceDownRef.current && hasAuthority) {
-        if (['INPUT', 'TEXTAREA'].includes(document.activeElement?.tagName || '')) return;
-        e.preventDefault();
-        isSpaceDownRef.current = true;
-        handleEngage();
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat) return;
+      if (e.code === 'Space' && hasAuthority) {
+        if (document.activeElement?.tagName !== 'INPUT' && document.activeElement?.tagName !== 'TEXTAREA') {
+          e.preventDefault();
+          updateBroadcast(true);
+        }
       }
-    }
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (e.code === 'Space') {
-        e.preventDefault();
-        isSpaceDownRef.current = false;
-        handleRelease();
-      }
-    }
-    const onBlur = () => {
-      if (isSpaceDownRef.current) {
-        isSpaceDownRef.current = false;
-        handleRelease();
+    };
+    
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && hasAuthority) {
+        updateBroadcast(false);
       }
     };
 
-    window.addEventListener('keydown', onKeyDown);
-    window.addEventListener('keyup', onKeyUp);
-    window.addEventListener('blur', onBlur);
-
-    return () => { 
-      window.removeEventListener('keydown', onKeyDown); 
-      window.removeEventListener('keyup', onKeyUp);
-      window.removeEventListener('blur', onBlur);
-    }
-  }, [hasAuthority, handleEngage, handleRelease]);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
+    };
+  }, [hasAuthority, updateBroadcast]);
 
   const handleTakeover = async () => {
-    if (!canBroadcast) return;
-    setIsTransferring(true);
+    // If token isn't there yet, we can't sync the stream
+    if (!token) {
+      console.error("❌ Spotify Token missing from hook state.");
+      return;
+    }
+
+    setIsClaiming(true);
     try {
-      if (token) {
-        await takeControlAsDJ({ get_spotify_token_99: token });
-        setHasAuthority(true);
-      }
+      // Direct Ably Sync (matches your useSpotifyToken.ts log channel)
+      const syncChannel = ably.channels.get('spotify_sync');
+      await syncChannel.publish('dj_takeover', { 
+        dj_id: profile?.id,
+        dj_name: profile?.full_name || 'Operator',
+        spotify_token: token 
+      });
+
+      setHasAuthority(true);
+      console.log("📡 Console Hijacked. Push-to-Talk Engaged.");
+    } catch (e) {
+      console.error("Takeover Failed:", e);
     } finally {
-      setIsTransferring(false);
+      setIsClaiming(false);
     }
   };
 
+  const handleRelease = () => {
+    killMicComplete();
+    setHasAuthority(false);
+    console.log("🔌 Console Released.");
+  };
+
+  if (!profile || (profile.role !== 'admin' && profile.role !== 'dj')) return null;
+
   return (
     <div className="flex flex-col gap-2 w-full select-none">
+      {/* PUSH TO TALK BUTTON */}
       <button 
-        onMouseDown={handleEngage} 
-        onMouseUp={handleRelease}
-        onMouseLeave={handleRelease}
+        onMouseDown={() => hasAuthority && updateBroadcast(true)} 
+        onMouseUp={() => hasAuthority && updateBroadcast(false)}
+        onTouchStart={() => hasAuthority && updateBroadcast(true)}
+        onTouchEnd={() => hasAuthority && updateBroadcast(false)}
         disabled={!hasAuthority}
-        className={`h-14 transition-all rounded border flex items-center justify-center gap-3 px-4
-          ${!hasAuthority ? 'bg-zinc-900 opacity-40 cursor-not-allowed' : 
-            isPlaying ? 'bg-red-600 border-white shadow-[0_0_20px_rgba(255,0,0,0.4)]' : 
-            'bg-black/60 border-white/20 hover:border-white/40'}`}
+        className={`h-16 transition-all duration-75 rounded-lg border flex items-center justify-center gap-3 px-4 shadow-xl
+          ${!hasAuthority 
+            ? 'opacity-20 cursor-not-allowed bg-zinc-900 border-white/5' 
+            : isPlaying 
+              ? 'bg-red-600 border-red-400 shadow-red-500/20' 
+              : 'bg-zinc-800 border-white/10 hover:bg-zinc-700 active:scale-[0.98]'
+          }`}
       >
         <Mic size={20} className={isPlaying ? "text-white" : "text-amber-500"} />
-        <span className="font-bold text-xs tracking-widest uppercase text-white">
-          {!hasAuthority ? 'CLAIM CONSOLE' : isPlaying ? 'ON AIR' : 'HOLD SPACE TO TALK'}
-        </span>
+        <div className="flex flex-col items-start text-left">
+          <span className="font-bold text-[10px] uppercase tracking-[0.2em]">
+            {!hasAuthority ? 'System Locked' : isPlaying ? 'LIVE ON AIR' : 'Ready to Talk'}
+          </span>
+          <span className="text-[8px] opacity-40 uppercase font-mono tracking-wider">
+            {hasAuthority ? (isPlaying ? 'Broadcasting...' : 'Hold Spacebar') : 'Claim Console First'}
+          </span>
+        </div>
       </button>
 
+      {/* AUTHORITY TOGGLE */}
       {!hasAuthority ? (
-        <button onClick={handleTakeover} disabled={isTransferring} className="h-10 bg-indigo-600/20 border border-indigo-500/40 rounded text-[10px] uppercase font-bold tracking-widest text-indigo-200">
-          {isTransferring ? 'Initialising...' : 'Claim DJ Console'}
+        <button 
+          onClick={handleTakeover} 
+          disabled={!token || isClaiming}
+          className={`h-10 text-[9px] font-bold border rounded uppercase tracking-widest transition-all flex items-center justify-center gap-2
+            ${!token || isClaiming 
+              ? 'bg-zinc-900 border-white/5 text-zinc-600 cursor-not-allowed' 
+              : 'bg-indigo-600/20 hover:bg-indigo-600/40 text-indigo-400 border-indigo-500/20'}`}
+        >
+          {isClaiming ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <Radio size={12} />
+          )}
+          {!token ? 'Waiting for Token...' : isClaiming ? 'Syncing...' : 'Claim DJ Console'}
         </button>
       ) : (
-        <button onClick={() => setHasAuthority(false)} className="h-10 bg-zinc-800 border border-zinc-600 rounded text-[10px] uppercase font-bold tracking-widest text-zinc-400">
-          Release Console
+        <button 
+          onClick={handleRelease} 
+          className="h-10 bg-zinc-900 hover:bg-red-900/20 text-zinc-500 hover:text-red-400 text-[9px] font-bold border border-white/5 rounded uppercase tracking-widest transition-all flex items-center justify-center gap-2"
+        >
+          <LogOut size={12} /> Release Console
         </button>
       )}
     </div>
-  )
+  );
 };

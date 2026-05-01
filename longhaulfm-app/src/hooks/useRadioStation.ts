@@ -1,68 +1,69 @@
 import { useEffect, useRef, useState } from 'react';
 
 export const useRadioStation = () => {
-  const localMicRef = useRef<HTMLAudioElement | null>(null);
-  const [micStream, setMicStream] = useState<MediaStream | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
+  const [isDucked, setIsDucked] = useState(false);
 
+  // cleanup on unmount
   useEffect(() => {
-    const audio = new Audio();
-    audio.muted = false; 
-    audio.autoplay = true;
-    (audio as any).preservesPitch = false;
-    localMicRef.current = audio;
-
     return () => {
-      if (micStream) {
-        micStream.getTracks().forEach(t => t.stop());
+      if (micStreamRef.current) {
+        micStreamRef.current.getTracks().forEach(t => t.stop());
       }
     };
-  }, [micStream]);
+  }, []);
 
   const toggleMicHardware = async (active: boolean) => {
-    console.log("🎤 Mic Signal:", active ? "LIVE" : "KILLED");
-    
-    try {
-      if (active) {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          audio: { 
-            echoCancellation: true, 
-            noiseSuppression: true, 
-            autoGainControl: false,
-            latency: 0,
-            sampleRate: 48000
-          } 
-        });
-        
-        setMicStream(stream);
-
-        if (localMicRef.current) {
-          localMicRef.current.srcObject = stream;
-          try {
-            await localMicRef.current.play();
-          } catch (playErr) {
-            console.warn("⚠️ Audio play deferred, retrying...", playErr);
-            setTimeout(() => localMicRef.current?.play(), 50);
-          }
-        }
-        return stream; // Return the stream for immediate use
-      } else {
-        if (micStream) {
-          micStream.getTracks().forEach(track => track.stop());
-          setMicStream(null);
+    // 1. ENGAGING THE MIC (Spacebar/Button Down)
+    if (active) {
+      try {
+        // Only request the stream if we don't already have one
+        if (!micStreamRef.current) {
+          console.log("🎙️ Attempting to engage Mic hardware...");
+          const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+          micStreamRef.current = stream;
         }
 
-        if (localMicRef.current) {
-          localMicRef.current.pause();
-          localMicRef.current.srcObject = null;
-          localMicRef.current.load(); 
-        }
-        return null;
+        // Enable the track and trigger Ducking
+        micStreamRef.current.getAudioTracks().forEach(t => (t.enabled = true));
+        setIsDucked(true);
+        console.log("🎤 LIVE - Ducking Engaged");
+
+      } catch (err: any) {
+        // SILENT FAIL: No popups, just console logs
+        console.error("❌ Mic Blocked (OBS/BUTT likely holding lock):", err.message);
+        // We still trigger "Ducking" so the DJ can talk over the music locally 
+        // even if the stream hardware is busy.
+        setIsDucked(true); 
       }
-    } catch (err) {
-      console.error("❌ Mic Hardware Error:", err);
-      throw err;
+    } 
+    
+    // 2. RELEASING THE MIC (Spacebar/Button Up)
+    else {
+      if (micStreamRef.current) {
+        // We don't stop the tracks (to avoid re-init lag next time), just disable them
+        micStreamRef.current.getAudioTracks().forEach(t => (t.enabled = false));
+      }
+      setIsDucked(false);
+      console.log("🎤 MUTED - Music Normal");
     }
   };
 
-  return { toggleMicHardware, micStream };
+  const killMicComplete = () => {
+    if (micStreamRef.current) {
+      micStreamRef.current.getTracks().forEach(t => t.stop());
+      micStreamRef.current = null;
+      setIsDucked(false);
+      console.log("⚰️ Hardware Connection Terminated");
+    }
+  };
+
+  // We expose initMic as a no-op or a simple check if needed, 
+  // but toggleMicHardware handles the heavy lifting now.
+  const initMic = async () => {
+    console.log("🔍 Mic init deferred to PTT (Push-to-Talk) action.");
+    return null;
+  };
+
+  return { toggleMicHardware, initMic, killMicComplete, isDucked };
 };
