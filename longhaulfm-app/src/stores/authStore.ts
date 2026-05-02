@@ -9,10 +9,11 @@ interface AuthState {
   isLoading: boolean
   signUp: (email: string, pass: string) => Promise<string | null>
   signIn: (email: string, pass: string) => Promise<string | null>
-  signInWithSocial: (provider: 'google' | 'facebook') => Promise<string | null>
+  signInWithSocial: (provider: 'google') => Promise<string | null>
   signOut: () => Promise<void>
   setSpotifyToken: (token: string) => void
   initialize: () => Promise<void>
+  setSession: (access_token: string, refresh_token: string) => Promise<void>
 }
 
 export const useAuthStore = create<AuthState>()(
@@ -25,14 +26,13 @@ export const useAuthStore = create<AuthState>()(
 
       initialize: async () => {
         try {
-          // 1. Get current session
           const { data: { session } } = await supabase.auth.getSession()
           
           let spotifyToken = null
           let userProfile = null
 
-          // 2. Only fetch the token if a session exists to prevent 400 errors for guests
           if (session) {
+            // Updated to use get_spotify_token_99
             const { data: authData } = await supabase
               .from('spotify_auth')
               .select('get_spotify_token_99')
@@ -41,7 +41,6 @@ export const useAuthStore = create<AuthState>()(
 
             spotifyToken = authData?.get_spotify_token_99 || null
 
-            // 3. Fetch the user profile
             const { data: profile } = await supabase
               .from('profiles')
               .select('*')
@@ -57,7 +56,6 @@ export const useAuthStore = create<AuthState>()(
             isLoading: false 
           })
 
-          // 4. Listen for auth changes
           supabase.auth.onAuthStateChange(async (event, session) => {
             if (session) {
               const { data: profile } = await supabase
@@ -66,18 +64,17 @@ export const useAuthStore = create<AuthState>()(
                 .eq('id', session.user.id)
                 .single()
               
-              // Only re-fetch token if we don't have it yet
-              if (!get().spotifyToken) {
-                const { data: authData } = await supabase
-                  .from('spotify_auth')
-                  .select('get_spotify_token_99')
-                  .limit(1)
-                  .maybeSingle()
-                
-                set({ user: session.user, profile, spotifyToken: authData?.get_spotify_token_99 })
-              } else {
-                set({ user: session.user, profile })
-              }
+              const { data: authData } = await supabase
+                .from('spotify_auth')
+                .select('get_spotify_token_99')
+                .limit(1)
+                .maybeSingle()
+              
+              set({ 
+                user: session.user, 
+                profile, 
+                spotifyToken: authData?.get_spotify_token_99 || null 
+              })
             } else {
               set({ user: null, profile: null, spotifyToken: null })
             }
@@ -88,21 +85,28 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
+      setSession: async (access_token, refresh_token) => {
+        set({ isLoading: true })
+        try {
+          const { error } = await supabase.auth.setSession({
+            access_token,
+            refresh_token,
+          })
+          if (error) throw error
+        } finally {
+          set({ isLoading: false })
+        }
+      },
+
       signUp: async (email, password) => {
         set({ isLoading: true })
         try {
-          const { data, error } = await supabase.auth.signUp({ 
+          const { error } = await supabase.auth.signUp({ 
             email, 
             password,
-            options: {
-              // Ensure the metadata is passed if needed for triggers
-              data: {
-                email: email
-              }
-            }
+            options: { data: { email: email } }
           })
           if (error) throw error
-          
           set({ isLoading: false })
           return null
         } catch (err: any) {
@@ -123,7 +127,6 @@ export const useAuthStore = create<AuthState>()(
             .eq('id', data.user.id)
             .single()
 
-          // Also grab the token on sign in
           const { data: authData } = await supabase
             .from('spotify_auth')
             .select('get_spotify_token_99')
@@ -146,13 +149,20 @@ export const useAuthStore = create<AuthState>()(
       signInWithSocial: async (provider) => {
         set({ isLoading: true })
         try {
-          const { error } = await supabase.auth.signInWithOAuth({
+          const { data, error } = await supabase.auth.signInWithOAuth({
             provider,
             options: {
-              redirectTo: window.location.origin,
+              redirectTo: 'longhaulfm://longhaul-fm.co.za/auth/callback',
+              skipBrowserRedirect: true,
             },
           })
           if (error) throw error
+          
+          if (data?.url) {
+            const { open } = await import('@tauri-apps/plugin-shell')
+            await open(data.url)
+          }
+          
           return null
         } catch (err: any) {
           set({ isLoading: false })

@@ -21,9 +21,9 @@
     ],
     "security": {
       "capabilities": [
-        "core-capability"
+        "default"
       ],
-      "csp": "default-src 'self' https://tauri.localhost; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://i.scdn.co https://longhaul-fm.co.za https://storage.googleapis.com; connect-src 'self' https://*.supabase.co wss://*.supabase.co https://*.spotify.com https://sdk.scdn.co https://*.ably.io wss://*.ably.io https://longhaul-fm.co.za https://storage.googleapis.com;"
+      "csp": "default-src 'self' tauri: http://ipc.localhost https://tauri.localhost; script-src 'self' 'unsafe-eval' 'unsafe-inline' https://sdk.scdn.co; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data: blob: https://*.scdn.co https://i.scdn.co https://longhaul-fm.co.za https://storage.googleapis.com; connect-src 'self' tauri: http://ipc.localhost https://tauri.localhost https://*.supabase.co wss://*.supabase.co https://*.spotify.com https://sdk.scdn.co https://*.ably.io wss://*.ably.io https://*.ably-realtime.com wss://*.ably-realtime.com https://longhaul-fm.co.za https://radio.longhaul-fm.co.za https://storage.googleapis.com; frame-src 'self' https://sdk.scdn.co https://*.spotify.com; media-src 'self' tauri: https://tauri.localhost https://radio.longhaul-fm.co.za;"
     }
   },
   "bundle": {
@@ -37,7 +37,7 @@
       "icons/icon.ico"
     ]
   },
- "plugins": {
+  "plugins": {
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDg4RDdFNTI5M0NBRTEzODgKUldTSUU2NDhLZVhYaU9vZkgzNWdwQktETzBFSXpZSVdaWTFLL1JoMldSSVpWaWxaaDQxUkFaeGcK",
       "endpoints": [
@@ -45,11 +45,20 @@
       ]
     },
     "deep-link": {
+      "desktop": {
+        "schemes": [
+          "longhaulfm"
+        ]
+      },
       "mobile": [
         {
           "host": "longhaul-fm.co.za",
-          "pathPrefix": ["/auth/callback"],
-          "scheme": ["longhaulfm"]
+          "pathPrefix": [
+            "/auth/callback"
+          ],
+          "scheme": [
+            "longhaulfm"
+          ]
         }
       ]
     }
